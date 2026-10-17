@@ -39,6 +39,7 @@ export enum AiErrorCode {
   INVALID_CONFIG = 'INVALID_CONFIG',
   IMAGE_INVALID = 'IMAGE_INVALID',
   IMAGE_TOO_LARGE = 'IMAGE_TOO_LARGE',
+  CAMERA_UNAVAILABLE = 'CAMERA_UNAVAILABLE',
   NETWORK_ERROR = 'NETWORK_ERROR',
   TIMEOUT = 'TIMEOUT',
   UNAUTHORIZED = 'UNAUTHORIZED',
@@ -62,6 +63,8 @@ export function aiErrorText(code: AiErrorCode): string {
       return '无法读取该图片，请更换一张';
     case AiErrorCode.IMAGE_TOO_LARGE:
       return '图片过大，压缩后仍超过 2MB，请更换图片';
+    case AiErrorCode.CAMERA_UNAVAILABLE:
+      return '当前设备无法使用相机，请从相册选择照片';
     case AiErrorCode.NETWORK_ERROR:
       return '网络连接失败，请检查网络后重试';
     case AiErrorCode.TIMEOUT:

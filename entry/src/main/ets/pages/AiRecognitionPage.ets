@@ -70,6 +70,28 @@ export struct AiRecognitionPage {
     }
   }
 
+  private async capturePhoto(): Promise<void> {
+    if (this.busy) {
+      return;
+    }
+    const context = this.getUIContext().getHostContext();
+    if (context === undefined) {
+      return;
+    }
+    try {
+      const uri = await PhotoPickerService.captureImage(context);
+      if (uri === null) {
+        return;
+      }
+      this.photoUri = uri;
+      this.result = null;
+      this.hasError = false;
+      this.errorMessage = '';
+    } catch (e) {
+      this.showError(e);
+    }
+  }
+
   private showError(e: object): void {
     const code = e instanceof AiError ? e.code : AiErrorCode.NETWORK_ERROR;
     this.errorMessage = aiErrorText(code);
@@ -174,24 +196,49 @@ export struct AiRecognitionPage {
 
           // 选图区域
           if (this.photoUri === null) {
-            Column({ space: space.sm }) {
-              Text('📷')
-                .fontSize(40)
-              Text('从相册选择食物照片')
-                .fontSize(fontSize.body)
-                .fontColor(color.text)
-              Text('支持 JPG、PNG · 最多一张')
-                .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+            Column({ space: space.md }) {
+              Column({ space: space.sm }) {
+                Text('📷')
+                  .fontSize(40)
+                Text('获取一张食物照片')
+                  .fontSize(fontSize.body)
+                  .fontColor(color.text)
+                Text('支持 JPG、PNG · 最多一张')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+              }
+              .alignItems(HorizontalAlign.Center)
+
+              Row({ space: space.sm }) {
+                Button('从相册选择')
+                  .layoutWeight(1)
+                  .height(44)
+                  .fontSize(fontSize.body)
+                  .fontColor(color.onPrimary)
+                  .backgroundColor(color.primary)
+                  .borderRadius(radius.large)
+                  .onClick(() => {
+                    this.pickImage();
+                  })
+                Button('拍照')
+                  .layoutWeight(1)
+                  .height(44)
+                  .fontSize(fontSize.body)
+                  .fontColor(color.primary)
+                  .backgroundColor(color.surface)
+                  .borderRadius(radius.large)
+                  .border({ width: layout.borderWidth, color: color.primary })
+                  .onClick(() => {
+                    this.capturePhoto();
+                  })
+              }
+              .width('100%')
             }
             .width('100%')
-            .height(180)
+            .padding(layout.cardPadding)
             .justifyContent(FlexAlign.Center)
             .backgroundColor(color.surfaceMuted)
             .borderRadius(16)
-            .onClick(() => {
-              this.pickImage();
-            })
           } else {
             Column() {
               Image(this.photoUri)
@@ -202,15 +249,29 @@ export struct AiRecognitionPage {
             }
             .width('100%')
 
-            Button('更换图片')
-              .height(40)
-              .fontSize(fontSize.secondary)
-              .fontColor(color.primary)
-              .backgroundColor(color.primaryLight)
-              .borderRadius(radius.pill)
-              .onClick(() => {
-                this.pickImage();
-              })
+            Row({ space: space.sm }) {
+              Button('更换图片')
+                .layoutWeight(1)
+                .height(40)
+                .fontSize(fontSize.secondary)
+                .fontColor(color.primary)
+                .backgroundColor(color.primaryLight)
+                .borderRadius(radius.pill)
+                .onClick(() => {
+                  this.pickImage();
+                })
+              Button('重新拍照')
+                .layoutWeight(1)
+                .height(40)
+                .fontSize(fontSize.secondary)
+                .fontColor(color.primary)
+                .backgroundColor(color.primaryLight)
+                .borderRadius(radius.pill)
+                .onClick(() => {
+                  this.capturePhoto();
+                })
+            }
+            .width('100%')
           }
 
           // 隐私提示
