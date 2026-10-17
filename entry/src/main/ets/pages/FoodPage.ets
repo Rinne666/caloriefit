@@ -1,0 +1,285 @@
+/**
+ * 饮食页：按早餐/午餐/晚餐/加餐分组展示，支持新增、编辑、删除。
+ */
+
+import { FoodRepository } from '../repositories/FoodRepository';
+import { SettingsRepository } from '../repositories/SettingsRepository';
+import { FoodLog } from '../models/FoodLog';
+import { AppSettings } from '../models/AppSettings';
+import { EmptyState } from '../components/EmptyState';
+import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
+import { MEAL_LABELS } from '../common/Constants';
+
+@Component
+export struct FoodPage {
+  @Consume('navStack') navStack: NavPathStack;
+  @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
+  @StorageLink('selectedDate') @Watch('reload') selectedDate: string = '';
+  @State foods: FoodLog[] = [];
+  @State budget: number = 1800;
+
+  aboutToAppear(): void {
+    this.reload();
+  }
+
+  reload(): void {
+    this.loadData();
+  }
+
+  private async loadData(): Promise<void> {
+    try {
+      this.foods = await FoodRepository.getByDate(this.selectedDate);
+      const settings: AppSettings = await SettingsRepository.getSettings();
+      this.budget = settings.dailyCalorieBudget;
+    } catch (e) {
+      // 保留旧数据
+    }
+  }
+
+  private totalCalories(): number {
+    let sum = 0;
+    for (let i = 0; i < this.foods.length; i++) {
+      sum += this.foods[i].calories;
+    }
+    return sum;
+  }
+
+  private mealFoods(mealType: number): FoodLog[] {
+    const result: FoodLog[] = [];
+    for (let i = 0; i < this.foods.length; i++) {
+      if (this.foods[i].mealType === mealType) {
+        result.push(this.foods[i]);
+      }
+    }
+    return result;
+  }
+
+  private showDatePicker(): void {
+    this.getUIContext().showDatePickerDialog({
+      start: new Date(2020, 0, 1),
+      end: new Date(2100, 11, 31),
+      selected: parseDateKey(this.selectedDate),
+      onDateAccept: (value: Date) => {
+        const key = toDateKey(value);
+        if (isFutureDate(key)) {
+          this.getUIContext().getPromptAction().showToast({ message: '不允许查看未来日期' });
+          return;
+        }
+        AppStorage.setOrCreate<string>('selectedDate', key);
+      }
+    });
+  }
+
+  private bumpRefresh(): void {
+    const cur = AppStorage.get<number>('refreshTick') ?? 0;
+    AppStorage.setOrCreate<number>('refreshTick', cur + 1);
+  }
+
+  private confirmDelete(log: FoodLog): void {
+    this.getUIContext().showAlertDialog({
+      title: '删除记录',
+      message: `确定删除「${log.name}」吗？`,
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: color.danger,
+        action: () => {
+          this.doDelete(log);
+        }
+      }
+    });
+  }
+
+  private async doDelete(log: FoodLog): Promise<void> {
+    try {
+      await FoodRepository.delete(log.id);
+      this.bumpRefresh();
+      this.getUIContext().getPromptAction().showToast({ message: '已删除' });
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({ message: '删除失败，请重试' });
+    }
+  }
+
+  private goEdit(log: FoodLog): void {
+    this.navStack.pushPathByName('FoodEdit', new FoodEditParams('edit', this.selectedDate, log.id));
+  }
+
+  private goAdd(): void {
+    this.navStack.pushPathByName('FoodEdit', new FoodEditParams('add', this.selectedDate, -1));
+  }
+
+  @Builder
+  FoodRow(log: FoodLog) {
+    Row({ space: space.sm }) {
+      Column({ space: 2 }) {
+        Text(log.name)
+          .fontSize(fontSize.body)
+          .fontColor(color.text)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(`${log.weightG}g × ${log.kcalPer100g}kcal/100g`)
+          .fontSize(fontSize.caption)
+          .fontColor(color.textHint)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Text(`${formatNumber(log.calories)} kcal`)
+        .fontSize(fontSize.body)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(color.food)
+
+      Text('删除')
+        .fontSize(fontSize.caption)
+        .fontColor(color.danger)
+        .padding(8)
+        .onClick(() => {
+          this.confirmDelete(log);
+        })
+    }
+    .width('100%')
+    .padding({ top: space.sm, bottom: space.sm })
+    .onClick(() => {
+      this.goEdit(log);
+    })
+  }
+
+  build() {
+    Scroll() {
+      Column({ space: space.md }) {
+        // 日期栏
+        Row() {
+          Text('饮食记录')
+            .fontSize(fontSize.pageTitle)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(color.text)
+            .layoutWeight(1)
+          Text(displayDate(this.selectedDate))
+            .fontSize(fontSize.secondary)
+            .fontColor(color.textSecondary)
+            .onClick(() => {
+              this.showDatePicker();
+            })
+          Button('切换日期')
+            .height(36)
+            .fontSize(fontSize.secondary)
+            .fontColor(color.primary)
+            .backgroundColor(color.primaryLight)
+            .borderRadius(radius.pill)
+            .margin({ left: space.sm })
+            .onClick(() => {
+              this.showDatePicker();
+            })
+        }
+        .width('100%')
+
+        // 每日摄入汇总卡
+        Row() {
+          Column({ space: 4 }) {
+            Text(`${formatNumber(this.totalCalories())} / ${formatNumber(this.budget)} kcal`)
+              .fontSize(fontSize.metric)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(color.food)
+            Text('已摄入 / 每日饮食预算')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .padding(layout.cardPadding)
+        .backgroundColor(color.foodLight)
+        .borderRadius(radius.card)
+        .width('100%')
+
+        if (this.foods.length === 0) {
+          EmptyState({
+            message: '今天还没有饮食记录',
+            buttonText: '新增食物',
+            onAction: () => {
+              this.goAdd();
+            }
+          })
+        } else {
+          ForEach(MEAL_LABELS, (label: string, index: number) => {
+            Column({ space: space.xs }) {
+              Row() {
+                Text(label)
+                  .fontSize(fontSize.sectionTitle)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(color.text)
+                  .layoutWeight(1)
+                Text(`小计 ${formatNumber(this.mealSubtotal(index))} kcal`)
+                  .fontSize(fontSize.secondary)
+                  .fontColor(color.textHint)
+              }
+              .width('100%')
+
+              if (this.mealFoods(index).length === 0) {
+                Text('暂无记录')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+                  .padding({ top: space.xs, bottom: space.xs })
+              } else {
+                ForEach(this.mealFoods(index), (log: FoodLog) => {
+                  this.FoodRow(log)
+                }, (log: FoodLog) => log.id.toString())
+              }
+            }
+            .padding(layout.cardPadding)
+            .backgroundColor(color.surface)
+            .borderRadius(radius.card)
+            .border({ width: layout.borderWidth, color: color.border })
+            .width('100%')
+          }, (label: string) => label)
+        }
+
+        // 新增按钮
+        Button('+ 新增食物')
+          .width('100%')
+          .height(layout.buttonHeight)
+          .fontSize(fontSize.body)
+          .fontColor(color.onPrimary)
+          .backgroundColor(color.primary)
+          .borderRadius(radius.large)
+          .onClick(() => {
+            this.goAdd();
+          })
+      }
+      .padding(layout.pagePadding)
+      .constraintSize({ minHeight: '100%' })
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    .backgroundColor(color.bg)
+  }
+
+  private mealSubtotal(mealType: number): number {
+    const list = this.mealFoods(mealType);
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) {
+      sum += list[i].calories;
+    }
+    return sum;
+  }
+}
+
+// 与 HomePage.ets 中的定义保持一致（ArkUI 不支持跨文件类型重导出，重复定义但结构相同）
+class FoodEditParams {
+  mode: string;
+  date: string;
+  id: number;
+
+  constructor(mode: string, date: string, id: number) {
+    this.mode = mode;
+    this.date = date;
+    this.id = id;
+  }
+}
