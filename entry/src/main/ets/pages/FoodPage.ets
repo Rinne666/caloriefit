@@ -117,12 +117,24 @@ export struct FoodPage {
   FoodRow(log: FoodLog) {
     Row({ space: space.sm }) {
       Column({ space: 2 }) {
-        Text(log.name)
-          .fontSize(fontSize.body)
-          .fontColor(color.text)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`${log.weightG}g × ${log.kcalPer100g}kcal/100g`)
+        Row({ space: space.xs }) {
+          if (log.entryMode === 1) {
+            Text('AI')
+              .fontSize(fontSize.caption)
+              .fontColor(color.primary)
+              .backgroundColor(color.primaryLight)
+              .borderRadius(radius.small)
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          }
+          Text(log.name)
+            .fontSize(fontSize.body)
+            .fontColor(color.text)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(VerticalAlign.Center)
+        Text(log.entryMode === 1 ? 'AI 整份估算' :
+          `${log.grams}g × ${log.kcalPer100g}kcal/100g`)
           .fontSize(fontSize.caption)
           .fontColor(color.textHint)
       }
@@ -196,6 +208,35 @@ export struct FoodPage {
         .backgroundColor(color.foodLight)
         .borderRadius(radius.card)
         .width('100%')
+
+        // AI 拍照识别入口
+        Row({ space: space.sm }) {
+          Text('📷')
+            .fontSize(22)
+          Column({ space: 2 }) {
+            Text('AI 拍照识别')
+              .fontSize(fontSize.body)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(color.primary)
+            Text('拍一张照片，AI 估算整份热量')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Text('›')
+            .fontSize(fontSize.sectionTitle)
+            .fontColor(color.textHint)
+        }
+        .padding(layout.cardPadding)
+        .backgroundColor(color.primaryLight)
+        .borderRadius(radius.card)
+        .width('100%')
+        .onClick(() => {
+          this.navStack.pushPathByName('AiRecognition',
+            new AiRecognitionNavParams(this.selectedDate));
+        })
 
         if (this.foods.length === 0) {
           EmptyState({
@@ -281,5 +322,14 @@ class FoodEditParams {
     this.mode = mode;
     this.date = date;
     this.id = id;
+  }
+}
+
+// AI 识别页导航参数
+class AiRecognitionNavParams {
+  date: string;
+
+  constructor(date: string) {
+    this.date = date;
   }
 }

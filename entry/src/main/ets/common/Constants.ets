@@ -17,7 +17,7 @@ export const DEFAULT_GOALS: Goals = {
 };
 
 export const DATABASE_NAME = 'caloriefit.db';
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 
 export const MEAL_LABELS: string[] = [
   '早餐', '午餐', '晚餐', '加餐'

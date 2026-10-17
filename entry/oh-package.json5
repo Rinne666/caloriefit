@@ -5,6 +5,9 @@
   "main": "",
   "author": "",
   "license": "",
-  "dependencies": {}
+  "dependencies": {
+    "@pura/harmony-dialog": "^1.1.8"
+  },
+  "devDependencies": {},
+  "dynamicDependencies": {}
 }
-

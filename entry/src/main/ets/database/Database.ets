@@ -1,12 +1,19 @@
 /**
- * RDB 单例。只初始化一次，所有 Repository 使用同一实例。
+ * RDB 单例。首次初始化时按真实表结构检测版本：
+ * 无 food_log → 建 V2；有 V1 表（无 entry_mode）→ 迁移；已是 V2 → 跳过。
  */
 
 import { relationalStore } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DATABASE_NAME, DATABASE_VERSION } from '../common/Constants';
-import { SQL_CREATE_ALL, SQL_INIT_SETTINGS } from './Schema';
+import {
+  SQL_CREATE_ALL_V2,
+  SQL_INIT_SETTINGS,
+  SQL_TABLE_EXISTS,
+  SQL_TABLE_INFO
+} from './Schema';
+import { migrateFoodV1ToV2 } from './MigrationV1ToV2';
 
 const DOMAIN = 0x0001;
 const TAG = 'CalorieFitDB';
@@ -33,19 +40,60 @@ export class Database {
     return Database.initPromise;
   }
 
+  private static async tableExists(store: relationalStore.RdbStore, name: string): Promise<boolean> {
+    const set = await store.querySql(SQL_TABLE_EXISTS, [name]);
+    let exists = false;
+    try {
+      exists = set.goToNextRow();
+    } finally {
+      set.close();
+    }
+    return exists;
+  }
+
+  private static async tableColumns(store: relationalStore.RdbStore, table: string): Promise<string[]> {
+    const set = await store.querySql(`PRAGMA table_info(${table})`);
+    const cols: string[] = [];
+    try {
+      while (set.goToNextRow()) {
+        cols.push(set.getString(set.getColumnIndex('name')));
+      }
+    } finally {
+      set.close();
+    }
+    return cols;
+  }
+
   private static async doInit(context: Context): Promise<relationalStore.RdbStore> {
     const config: relationalStore.StoreConfig = {
       name: DATABASE_NAME,
       securityLevel: relationalStore.SecurityLevel.S1
     };
     const store = await relationalStore.getRdbStore(context, config);
-    store.version = DATABASE_VERSION;
-    for (let i = 0; i < SQL_CREATE_ALL.length; i++) {
-      await store.executeSql(SQL_CREATE_ALL[i]);
+
+    const hasFood = await Database.tableExists(store, 'food_log');
+    if (!hasFood) {
+      // 全新数据库：建 V2
+      for (let i = 0; i < SQL_CREATE_ALL_V2.length; i++) {
+        await store.executeSql(SQL_CREATE_ALL_V2[i]);
+      }
+      await store.executeSql(SQL_INIT_SETTINGS);
+      hilog.info(DOMAIN, TAG, 'fresh V2 database created');
+    } else {
+      const cols = await Database.tableColumns(store, 'food_log');
+      if (!cols.includes('entry_mode')) {
+        // V1 库：迁移
+        await migrateFoodV1ToV2(store);
+      } else if (!cols.includes('ai_notes') || !cols.includes('ai_confidence')) {
+        // 结构不完整，拒绝初始化，保留原库
+        throw new Error('food_log table has incomplete V2 structure');
+      } else {
+        // 已是 V2：补写版本号（处理迁移提交后、写版本前退出的情况）
+        hilog.info(DOMAIN, TAG, 'food_log already V2, skip migration');
+      }
     }
-    await store.executeSql(SQL_INIT_SETTINGS);
+    store.version = DATABASE_VERSION;
     Database.store = store;
-    hilog.info(DOMAIN, TAG, 'database initialized');
     return store;
   }
 
@@ -56,7 +104,11 @@ export class Database {
     return Database.store;
   }
 
-  /** 清空全部业务记录（三张表，同一事务），app_settings 不删除 */
+  static getAppContext(): Context | null {
+    return Database.appContext;
+  }
+
+  /** 清空全部业务记录（三张表，同一事务），app_settings 与 AI 配置不删除 */
   static async clearAllRecords(): Promise<void> {
     const store = Database.getStore();
     store.beginTransaction();

@@ -12,6 +12,8 @@ import { ActivityPage } from './ActivityPage';
 import { ProfilePage } from './ProfilePage';
 import { FoodEditPage } from './FoodEditPage';
 import { ActivityEditPage } from './ActivityEditPage';
+import { AiRecognitionPage } from './AiRecognitionPage';
+import { AiSettingsPage } from './AiSettingsPage';
 import { color, fontSize } from '../common/DesignTokens';
 import { todayKey } from '../common/DateUtils';
 
@@ -54,6 +56,10 @@ struct Index {
       FoodEditPage()
     } else if (name === 'ActivityEdit') {
       ActivityEditPage()
+    } else if (name === 'AiRecognition') {
+      AiRecognitionPage()
+    } else if (name === 'AiSettings') {
+      AiSettingsPage()
     }
   }
 

@@ -1,61 +1,86 @@
 /**
- * 饮食记录的增删改查。排序固定 created_at DESC, id DESC（新增优先显示）。
+ * 饮食记录的增删改查（V2：entry_mode / AI 字段 / 可空重量）。
+ * 排序固定 created_at DESC, id DESC（新增优先显示）。
  */
 
 import { relationalStore } from '@kit.ArkData';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { Database } from '../database/Database';
-import { FoodLog } from '../models/FoodLog';
+import { FoodLog, FoodLogInput } from '../models/FoodLog';
 
 const TABLE = 'food_log';
 
 function mapRow(rs: relationalStore.ResultSet): FoodLog {
+  const entryMode = rs.getLong(rs.getColumnIndex('entry_mode'));
+  let grams: number | null = null;
+  let kcalPer100g: number | null = null;
+  let aiConfidence: number | null = null;
+  let aiNotes: string | null = null;
+  if (entryMode === 0) {
+    grams = rs.getDouble(rs.getColumnIndex('grams'));
+    kcalPer100g = rs.getDouble(rs.getColumnIndex('kcal_per_100g'));
+  } else {
+    const confIdx = rs.getColumnIndex('ai_confidence');
+    const notesIdx = rs.getColumnIndex('ai_notes');
+    if (rs.getColumnTypeSync(confIdx) !== relationalStore.ColumnType.NULL) {
+      aiConfidence = rs.getDouble(confIdx);
+    }
+    if (rs.getColumnTypeSync(notesIdx) !== relationalStore.ColumnType.NULL) {
+      aiNotes = rs.getString(notesIdx);
+    }
+  }
   return new FoodLog(
     rs.getLong(rs.getColumnIndex('id')),
     rs.getString(rs.getColumnIndex('date')),
     rs.getString(rs.getColumnIndex('name')),
     rs.getLong(rs.getColumnIndex('meal_type')),
-    rs.getDouble(rs.getColumnIndex('weight_g')),
-    rs.getDouble(rs.getColumnIndex('kcal_per_100g')),
+    grams,
+    kcalPer100g,
     rs.getLong(rs.getColumnIndex('calories')),
+    entryMode,
+    aiConfidence,
+    aiNotes,
     rs.getLong(rs.getColumnIndex('created_at')),
     rs.getLong(rs.getColumnIndex('updated_at'))
   );
 }
 
 export class FoodRepository {
-  static async insert(log: FoodLog): Promise<number> {
+  /** 手动模式重新计算热量；AI 模式直接保存确认的总热量 */
+  static async insert(input: FoodLogInput): Promise<number> {
     const store = await Database.ensure();
     const now = Date.now();
     const bucket: relationalStore.ValuesBucket = {
-      'date': log.date,
-      'name': log.name,
-      'meal_type': log.mealType,
-      'weight_g': log.weightG,
-      'kcal_per_100g': log.kcalPer100g,
-      'calories': log.calories,
+      'date': input.date,
+      'name': input.name,
+      'meal_type': input.mealType,
+      'grams': input.grams,
+      'kcal_per_100g': input.kcalPer100g,
+      'calories': input.calories,
+      'entry_mode': input.entryMode,
+      'ai_confidence': input.aiConfidence,
+      'ai_notes': input.aiNotes,
       'created_at': now,
       'updated_at': now
     };
-    const id = await store.insert(TABLE, bucket);
-    log.createdAt = now;
-    log.updatedAt = now;
-    return id;
+    return store.insert(TABLE, bucket);
   }
 
-  static async update(log: FoodLog): Promise<void> {
+  static async update(id: number, input: FoodLogInput): Promise<void> {
     const store = await Database.ensure();
     const bucket: relationalStore.ValuesBucket = {
-      'date': log.date,
-      'name': log.name,
-      'meal_type': log.mealType,
-      'weight_g': log.weightG,
-      'kcal_per_100g': log.kcalPer100g,
-      'calories': log.calories,
+      'date': input.date,
+      'name': input.name,
+      'meal_type': input.mealType,
+      'grams': input.grams,
+      'kcal_per_100g': input.kcalPer100g,
+      'calories': input.calories,
+      'entry_mode': input.entryMode,
+      'ai_confidence': input.aiConfidence,
+      'ai_notes': input.aiNotes,
       'updated_at': Date.now()
     };
     const predicates = new relationalStore.RdbPredicates(TABLE);
-    predicates.equalTo('id', log.id);
+    predicates.equalTo('id', id);
     await store.update(bucket, predicates);
   }
 

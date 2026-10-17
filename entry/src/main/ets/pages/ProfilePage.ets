@@ -12,6 +12,7 @@ import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivit
 @Component
 export struct ProfilePage {
   @StorageLink('refreshTick') refreshTick: number = 0;
+  @Consume('navStack') navStack: NavPathStack;
   @State budgetInput: string = '1800';
   @State stepsGoalInput: string = '8000';
   @State minutesGoalInput: string = '30';
@@ -217,6 +218,35 @@ export struct ProfilePage {
         .borderRadius(radius.card)
         .border({ width: layout.borderWidth, color: color.border })
         .width('100%')
+
+        // AI 设置入口
+        Row({ space: space.sm }) {
+          Text('🤖')
+            .fontSize(20)
+          Column({ space: 2 }) {
+            Text('AI 食物识别设置')
+              .fontSize(fontSize.body)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(color.text)
+            Text('API Key、模型与演示模式')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Text('›')
+            .fontSize(fontSize.sectionTitle)
+            .fontColor(color.textHint)
+        }
+        .padding(layout.cardPadding)
+        .backgroundColor(color.surface)
+        .borderRadius(radius.card)
+        .border({ width: layout.borderWidth, color: color.border })
+        .width('100%')
+        .onClick(() => {
+          this.navStack.pushPathByName('AiSettings', new Object());
+        })
 
         // 危险操作
         Button('清空全部记录')
