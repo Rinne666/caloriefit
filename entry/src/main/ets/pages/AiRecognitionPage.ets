@@ -37,12 +37,14 @@ export struct AiRecognitionPage {
   @State errorMessage: string = '';
   @State hasError: boolean = false;
   @State busy: boolean = false;
+  @State demoMode: boolean = false;
   private requestSeq: number = 0;
 
   private buildParams(p: AiRecognitionParams | null | undefined): void {
     if (p !== null && p !== undefined && typeof p.date === 'string') {
       this.date = p.date;
     }
+    this.demoMode = AiConfigRepository.isDemoMode();
   }
 
   private bumpRefresh(): void {
@@ -86,7 +88,7 @@ export struct AiRecognitionPage {
       apiKey = '';
     }
     if (apiKey.length === 0) {
-      const demo = await AiConfigRepository.isDemoMode();
+      const demo = AiConfigRepository.isDemoMode();
       if (!demo) {
         this.askForApiKey();
         return;
@@ -158,6 +160,17 @@ export struct AiRecognitionPage {
             .fontWeight(FontWeight.Bold)
             .fontColor(color.text)
             .width('100%')
+
+          // 演示模式显著标注（PM 要求）
+          if (this.demoMode) {
+            Text('⚠ 演示模式：当前结果为本地模拟数据，并非真实 AI 识别')
+              .fontSize(fontSize.secondary)
+              .fontColor(color.food)
+              .padding(space.sm)
+              .backgroundColor(color.foodLight)
+              .borderRadius(radius.medium)
+              .width('100%')
+          }
 
           // 选图区域
           if (this.photoUri === null) {

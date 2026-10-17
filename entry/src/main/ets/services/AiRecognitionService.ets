@@ -10,7 +10,7 @@ import { AiPrompt } from './AiPrompt';
 import { AiHttpClient } from './AiHttpClient';
 import { AiResponseParser } from './AiResponseParser';
 import { AiConfigRepository } from '../repositories/AiConfigRepository';
-import { AiErrorCode, AiError, AI_DEMO_RESPONSES } from '../common/AiConstants';
+import { AiErrorCode, AiError, AI_DEMO_RESPONSE } from '../common/AiConstants';
 
 interface imageUrlInner {
   url: string;
@@ -68,16 +68,15 @@ export class AiRecognitionService {
     return JSON.stringify(requestObj);
   }
 
-  /** 演示模式：随机注入一条模拟响应，用于无 Key 的端到端链路验证 */
+  /** 演示模式：注入固定模拟响应（不发网络请求，仍走完整解析流程） */
   private static async recognizeWithDemo(): Promise<AiRecognitionResult> {
     await new Promise<void>((resolve: () => void) => setTimeout(resolve, 1200));
-    const idx = Math.floor(Math.random() * AI_DEMO_RESPONSES.length);
-    return AiResponseParser.parseContent(AI_DEMO_RESPONSES[idx]);
+    return AiResponseParser.parseContent(AI_DEMO_RESPONSE);
   }
 
   static async recognize(imagePayload: AiImagePayload,
     config: AiConfig, apiKey: string): Promise<AiRecognitionResult> {
-    if (await AiConfigRepository.isDemoMode()) {
+    if (AiConfigRepository.isDemoMode()) {
       return AiRecognitionService.recognizeWithDemo();
     }
     if (config.baseUrl.length === 0 || config.modelName.length === 0) {

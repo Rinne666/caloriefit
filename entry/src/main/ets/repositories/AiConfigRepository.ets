@@ -8,6 +8,9 @@ import { AiConfig } from '../models/AiConfig';
 import { AiConfigKeys, AiDefaults } from '../common/AiConstants';
 
 export class AiConfigRepository {
+  /** 演示模式为会话级开关：不落盘，重启后默认关闭（PM 决策） */
+  private static sessionDemoMode: boolean = AiDefaults.DEMO_MODE;
+
   private static async getStore(): Promise<preferences.Preferences> {
     const context = Database.getAppContext();
     if (context === null) {
@@ -34,15 +37,12 @@ export class AiConfigRepository {
     await prefs.flush();
   }
 
-  static async isDemoMode(): Promise<boolean> {
-    const prefs = await AiConfigRepository.getStore();
-    return (prefs.getSync(AiConfigKeys.DEMO_MODE, AiDefaults.DEMO_MODE) as boolean) ?? false;
+  static isDemoMode(): boolean {
+    return AiConfigRepository.sessionDemoMode;
   }
 
-  static async setDemoMode(enabled: boolean): Promise<void> {
-    const prefs = await AiConfigRepository.getStore();
-    await prefs.putSync(AiConfigKeys.DEMO_MODE, enabled);
-    await prefs.flush();
+  static setDemoMode(enabled: boolean): void {
+    AiConfigRepository.sessionDemoMode = enabled;
   }
 
   static async resetConfig(): Promise<void> {

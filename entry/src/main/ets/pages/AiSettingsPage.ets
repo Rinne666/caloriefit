@@ -43,7 +43,7 @@ export struct AiSettingsPage {
       this.modelInput = config.modelName;
       this.baseUrlInput = config.baseUrl;
       this.rememberKey = config.rememberApiKey;
-      this.demoMode = await AiConfigRepository.isDemoMode();
+      this.demoMode = AiConfigRepository.isDemoMode();
       const key = await AiCredentialStore.getApiKey();
       this.hasStoredKey = key !== null && key.length > 0;
     } catch (e) {

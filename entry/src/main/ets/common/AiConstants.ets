@@ -97,9 +97,5 @@ export class AiError extends Error {
   }
 }
 
-/** 演示模式注入的模拟响应（用于无 Key 端到端验证，不发网络请求） */
-export const AI_DEMO_RESPONSES: string[] = [
-  '{"foodName":"米饭配鸡肉和蔬菜","estimatedTotalKcal":620,"confidence":0.72,"notes":"估计为一人份套餐，含米饭、鸡肉、蔬菜及少量烹饪油；实际重量和酱料用量不确定。"}',
-  '{"foodName":"牛肉面一碗","estimatedTotalKcal":540,"confidence":0.66,"notes":"按一碗普通大小的牛肉面估算，含面条、牛肉与汤底油脂；份量假设不确定。"}',
-  '{"foodName":"苹果一个","estimatedTotalKcal":95,"confidence":0.85,"notes":"按中等大小苹果估算，约 180g；品种差异会带来小幅误差。"}'
-];
+/** 演示模式注入的固定模拟响应（PM 确认数据，仅用于开发测试，不发网络请求） */
+export const AI_DEMO_RESPONSE: string = '{"foodName":"演示食物（模拟识别）","estimatedTotalKcal":620,"confidence":0.85,"notes":"本地演示数据，非真实AI识别结果。仅用于开发测试。"}';
