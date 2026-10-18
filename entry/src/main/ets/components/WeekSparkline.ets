@@ -15,7 +15,6 @@
 import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
 import { DayPoint } from '../repositories/MacroRepository';
 import { toDateKey, parseDateKey } from '../common/DateUtils';
-
 const WEEK_LABELS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 
 /** 柱区高度(vp)。底轨固定此高，数据柱按比例填充。 */
@@ -28,14 +27,38 @@ export struct WeekSparkline {
   @Prop targetKcal: number = 1800;
   @Prop selectedDate: string = '';
 
-  private get maxKcal(): number {
-    let m = this.targetKcal;
+  /**
+   * 柱区最大刻度。
+   *
+   * 刻意用普通方法而非 getter：实测 ArkUI 的 @Component struct 中
+   * `private get` 求值不可靠，曾返回 NaN，导致所有 .height(NaN)
+   * 静默不渲染 —— 编译通过、日志无异常，柱子整个消失。
+   */
+  private calcMaxKcal(): number {
+    let m: number = this.targetKcal > 0 ? this.targetKcal : 0;
     for (let i = 0; i < this.points.length; i++) {
       if (this.points[i].kcal > m) {
         m = this.points[i].kcal;
       }
     }
     return m <= 0 ? 1 : m;
+  }
+
+  /** 柱高。非法值一律回退 0，避免 .height(NaN) 静默吞掉整根柱子 */
+  private barHeight(kcal: number): number {
+    if (!(kcal > 0)) {
+      return 0;
+    }
+    const max = this.calcMaxKcal();
+    if (!(max > 0)) {
+      return 0;
+    }
+    const ratio = kcal / max;
+    if (!isFinite(ratio)) {
+      return 0;
+    }
+    const h = Math.round(ratio * BAR_AREA);
+    return Math.max(4, Math.min(BAR_AREA, h));
   }
 
   /** 把近 N 日对齐到"周一..周日"7 个槽位 */
@@ -46,28 +69,24 @@ export struct WeekSparkline {
     const monday = new Date(sel);
     monday.setDate(sel.getDate() - dow);
 
-    const byDate: Record<string, DayPoint> = {};
-    for (let i = 0; i < this.points.length; i++) {
-      byDate[this.points[i].date] = this.points[i];
-    }
-
+    // ArkTS 不保证 Record 索引访问可用（arkts-no-props-by-index），
+    // 这里改成线性匹配：7 个槽位 × 少量数据，代价可忽略且行为确定。
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
       const key = toDateKey(d);
-      slots.push(byDate[key] ?? {
+      let found: DayPoint | null = null;
+      for (let j = 0; j < this.points.length; j++) {
+        if (this.points[j].date === key) {
+          found = this.points[j];
+          break;
+        }
+      }
+      slots.push(found !== null ? found as DayPoint : {
         date: key, kcal: 0, proteinG: 0, carbsG: 0, fatG: 0
       });
     }
     return slots;
-  }
-
-  private barHeight(kcal: number): number {
-    if (kcal <= 0) {
-      return 0;
-    }
-    const ratio = kcal / this.maxKcal;
-    return Math.max(4, Math.round(ratio * BAR_AREA));
   }
 
   private isOverTarget(kcal: number): boolean {
@@ -107,13 +126,14 @@ export struct WeekSparkline {
                   .borderRadius(6)
                   .backgroundColor(color.ringTrack)
 
-                if (p.kcal > 0) {
-                  Row()
-                    .width(18)
-                    .height(this.barHeight(p.kcal))
-                    .borderRadius(6)
-                    .backgroundColor(this.isOverTarget(p.kcal) ? color.danger : color.primary)
-                }
+                // 不用 if：无数据时 barHeight 返回 0，.height(0) 天然不可见。
+                // 实测在 Stack 内用 if 包裹条件子组件时填充柱不渲染，
+                // 而 barHeight 已经算对了 —— 去掉条件后恢复正常。
+                Row()
+                  .width(18)
+                  .height(this.barHeight(p.kcal))
+                  .borderRadius(6)
+                  .backgroundColor(this.isOverTarget(p.kcal) ? color.danger : color.primary)
               }
               .width(18)
               .height(BAR_AREA)
@@ -126,7 +146,7 @@ export struct WeekSparkline {
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Center)
-          }, (p: DayPoint) => p.date)
+          }, (p: DayPoint) => `${p.date}#${p.kcal}`)
         }
         .width('100%')
         .alignItems(VerticalAlign.Bottom)
