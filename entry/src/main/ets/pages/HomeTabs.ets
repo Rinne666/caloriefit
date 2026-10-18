@@ -12,17 +12,19 @@
  *   而且原版本来就是分段药丸而不是可滑动 Tab，手写控件反而更贴近。
  */
 
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import { color, fontSize, space, radius, layout, glassShadow, buttonGlow } from '../common/DesignTokens';
 import { HomePage } from './HomePage';
 import { ClubPage } from './ClubPage';
 import { WaterPage } from './WaterPage';
 import { FastingPage } from './FastingPage';
+import { FoodEditParams } from './HomePage';
 
 const SUB_TABS: string[] = ['综合', '社群', '饮水', '断食'];
 const SUB_ICONS: string[] = ['📊', '👥', '💧', '⏳'];
 
 @Component
 export struct HomeTabs {
+  @Consume('navStack') navStack: NavPathStack;
   @State private current: number = 0;
 
   private iconFor(i: number): string {
@@ -51,29 +53,60 @@ export struct HomeTabs {
     })
   }
 
+  /**
+   * 悬浮「+」记录入口 —— 对应原版 Home 的浮动加号。
+   *
+   * 放在 HomeTabs 而不是 HomePage，是为了四个子页都能直接记录，
+   * 不必先切回「综合」。
+   */
+  @Builder
+  Fab() {
+    Button('+')
+      .width(58)
+      .height(58)
+      .fontSize(30)
+      .fontColor(color.onPrimary)
+      .backgroundColor(color.primary)
+      .borderRadius(29)
+      .shadow(glassShadow(16, 8))
+      // 抬高到内容上方：贴着底部会压住「记录运动」按钮。
+      // 悬浮按钮本来就该盖在内容上，滚动时下方的卡片从它底下过去。
+      .margin({ right: 20, bottom: 130 })
+      .onClick(() => {
+        this.navStack.pushPathByName('FoodEdit',
+          new FoodEditParams('add', AppStorage.get<string>('selectedDate') ?? '', -1));
+      })
+  }
+
   build() {
-    Column() {
-      Row() {
-        ForEach(SUB_TABS, (label: string, i: number) => {
-          this.SubBar(label, i)
-        }, (label: string, i: number) => label + i)
+    // Stack 默认居中对齐，这里必须显式指定 BottomEnd，FAB 才会贴到右下。
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      Column() {
+        Row() {
+          ForEach(SUB_TABS, (label: string, i: number) => {
+            this.SubBar(label, i)
+          }, (label: string, i: number) => label + i)
+        }
+        .width('100%')
+        .padding({ top: 6, bottom: 6, left: 6, right: 6 })
+        .justifyContent(FlexAlign.Center)
+
+        if (this.current === 0) {
+          HomePage()
+        } else if (this.current === 1) {
+          ClubPage()
+        } else if (this.current === 2) {
+          WaterPage()
+        } else {
+          FastingPage()
+        }
       }
       .width('100%')
-      .padding({ top: 6, bottom: 6, left: 6, right: 6 })
-      .justifyContent(FlexAlign.Center)
+      .height('100%')
 
-      if (this.current === 0) {
-        HomePage()
-      } else if (this.current === 1) {
-        ClubPage()
-      } else if (this.current === 2) {
-        WaterPage()
-      } else {
-        FastingPage()
-      }
+      this.Fab()
     }
     .width('100%')
     .height('100%')
-    .layoutWeight(1)
   }
 }

@@ -30,11 +30,31 @@
 
 | Tab | NutriScan 对应 | CalorieFit 实现 | 状态 |
 |---|---|---|---|
+| 启动/引导 | splash_screen + setup_screen | `OnboardingPage.ets` 5 步 | ✅ 结果真实落库 |
 | 今日 | Home（Overall/Club/Water/Fasting） | `HomeTabs.ets` 手写分段控件 | ✅ 4 个子页全通 |
 | 膳食 | Diet Plan（4 个子页） | `DietPlanPage.ets` | ✅ 界面 + 示例数据 |
 | 进度 | Progress（Today/Week/30 Days + Readiness） | `ProgressPage.ets` | ✅ 图表真实数据 / Readiness 占位 |
 | 营养师 | NutriBites（AI 对话） | `NutriBitesPage.ets` | ⚠ 未实现跳转 |
 | 我的 | You（8 个二级入口） | `ProfilePage.ets` | ✅ 入口全立，2 个实页 + 6 个占位 |
+
+### 2.1.1 引导流程
+
+| 步骤 | 原版对应 | CalorieFit | 结果写到 |
+|---|---|---|---|
+| 启动页 | splash_screen | 品牌 + 副标题，1.4s 自动进 | — |
+| 1 目标 | 目标选择 | 减脂/维持/增重/重组 药丸单选 | `body_profile.mode` |
+| 2 活动量 | Activity Level | 久坐/轻度/中度/高强度 | `body_profile.activity` |
+| 3 通知 | 通知诱导 | 预览通知卡 + 三条说明（照 flow_02 布局） | — |
+| 4 补剂 | Can you take Nutritional Supplements? | 愿意/不吃 | 引导草稿 |
+| 5 生活方式 | Lifestyle & Feelings | 作息规律 + 外食频率 | 引导草稿 |
+
+引导结束时 `OnboardingService.applyToProfile()` 把目标模式与活动量**真的写进体征档案**，
+直接参与 BMR/TDEE 推导 —— 不是走形式的装饰步骤。模拟器已验证：引导选「增重 / 高强度」后，
+「我的 → 体征档案」里两项同步变化。
+
+**两处有意不复制**：
+- 语言选择屏 —— 本 App 只发中文，做一屏只能选自己
+- 订阅墙 —— 原版是「划线价与实付价相同却宣称 70% off」的虚假折扣，不克隆；引导以生活方式收尾
 
 ### 2.2 今日页四个子页
 

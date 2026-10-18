@@ -22,6 +22,7 @@ import { DATA_SOURCE_LABEL } from '../common/Constants';
 import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivityKcalGoal } from '../common/Validators';
 import { YouEntry, Provenance } from '../services/MockContent';
 import { setComingSoon, ComingSoonPage } from '../components/ComingSoonPage';
+import { OnboardingPage } from './OnboardingPage';
 
 /**
  * 「我的」二级入口清单。
@@ -56,6 +57,9 @@ export struct ProfilePage {
 
   /** 未实现功能覆盖层是否展开（页内自持，见 build() 注释） */
   @State private csVisible: boolean = false;
+
+  /** 重看引导的覆盖层 */
+  @State private onboardingVisible: boolean = false;
 
   enterPage(): void {
     this.entered = true;
@@ -756,8 +760,7 @@ export struct ProfilePage {
             .fontColor(color.text)
             .width('100%')
 
-          ForEach(YOU_ENTRIES, (e: YouEntry) => {
-            Row() {
+          ForEach(YOU_ENTRIES, (e: YouEntry) => {            Row() {
               Column({ space: 2 }) {
                 Text(e.title)
                   .fontSize(fontSize.body)
@@ -787,6 +790,36 @@ export struct ProfilePage {
               this.openYouEntry(e);
             })
           }, (e: YouEntry) => e.id)
+          // 重看引导：走页内覆盖层（跨组件通道都试过，见 build() 注释）
+          Row() {
+            Column({ space: 2 }) {
+              Text('重看引导流程')
+                .fontSize(fontSize.body)
+                .fontColor(color.text)
+              Text('重新选择目标与活动量')
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text('已实现')
+              .fontSize(fontSize.caption)
+              .fontColor(color.macroOk)
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .backgroundColor(color.glassFill)
+              .borderRadius(radius.small)
+              .margin({ right: 6 })
+
+            Text('›')
+              .fontSize(fontSize.sectionTitle)
+              .fontColor(color.textHint)
+          }
+          .width('100%')
+          .padding({ top: space.sm, bottom: space.sm })
+          .onClick(() => {
+            this.onboardingVisible = true;
+          })
         }
         .width('100%')
         .padding(layout.cardPadding)
@@ -890,6 +923,35 @@ export struct ProfilePage {
             .margin({ top: 46, left: 16 })
             .onClick(() => {
               this.csVisible = false;
+            })
+        }
+        .width('100%')
+        .height('100%')
+      }
+
+      // 重看引导：同样用页内覆盖层，不用 NavDestination。
+      // 注意这是页内覆盖层，底 Tab 栏仍在它下面 —— 首启那次是全屏的，
+      // 没有这个问题；「重看引导」属于次要入口，可接受。
+      if (this.onboardingVisible) {
+        Stack({ alignContent: Alignment.TopEnd }) {
+          OnboardingPage({
+            onDone: () => {
+              this.onboardingVisible = false;
+              // 引导改写了体征档案，重新读一遍把界面同步过来
+              this.loadSettings();
+              this.loadBodyProfile();
+            }
+          })
+
+          Button('✕')
+            .width(44)
+            .height(44)
+            .fontSize(20)
+            .fontColor(color.text)
+            .backgroundColor(Color.Transparent)
+            .margin({ top: 46, right: 16 })
+            .onClick(() => {
+              this.onboardingVisible = false;
             })
         }
         .width('100%')

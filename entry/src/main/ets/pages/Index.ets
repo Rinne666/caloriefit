@@ -28,7 +28,10 @@ import { FoodEditPage } from './FoodEditPage';
 import { ActivityEditPage } from './ActivityEditPage';
 import { AiRecognitionPage } from './AiRecognitionPage';
 import { AiSettingsPage } from './AiSettingsPage';
-import { ComingSoonPage } from '../components/ComingSoonPage';import { color, fontSize, pageGradient } from '../common/DesignTokens';
+import { ComingSoonPage } from '../components/ComingSoonPage';
+import { OnboardingPage } from './OnboardingPage';
+import { OnboardingService } from '../services/OnboardingService';
+import { common } from '@kit.AbilityKit';import { color, fontSize, pageGradient } from '../common/DesignTokens';
 import { todayKey } from '../common/DateUtils';
 
 @Entry
@@ -38,6 +41,8 @@ struct Index {
   @StorageLink('selectedDate') @Watch('onDateChanged') selectedDate: string = todayKey();
   @State appReady: boolean = false;
   @State initError: string = '';
+  /** 是否已走过引导。false 时首屏是 OnboardingPage，走完才进主界面 */
+  @State onboarded: boolean = false;
 
   aboutToAppear(): void {
     this.initApp();
@@ -53,6 +58,7 @@ struct Index {
       const settings: AppSettings = await SettingsRepository.getSettings();
       AppStorage.setOrCreate<AppSettings>('appSettings', settings);
       AppStorage.setOrCreate<number>('refreshTick', 0);
+      this.onboarded = OnboardingService.isDone(context as common.UIAbilityContext);
       this.appReady = true;
     } catch (e) {
       const err = e as Error;
@@ -101,6 +107,14 @@ struct Index {
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
+      } else if (!this.onboarded) {
+        // 首启引导：目标 / 活动量 / 通知 / 补剂 / 生活方式，
+        // 结果真的写进体征档案，直接影响 BMR/TDEE 推导
+        OnboardingPage({
+          onDone: () => {
+            this.onboarded = true;
+          }
+        })
       } else {
         Tabs({ barPosition: BarPosition.End }) {
             TabContent() {
