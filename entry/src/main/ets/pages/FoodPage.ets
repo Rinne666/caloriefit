@@ -137,6 +137,22 @@ export struct FoodPage {
           `${log.grams}g × ${log.kcalPer100g}kcal/100g`)
           .fontSize(fontSize.caption)
           .fontColor(color.textHint)
+
+        // V3：宏量摘要。有完整宏量才显示，不以 0 冒充
+        if (log.hasMacros()) {
+          Row({ space: space.xxs }) {
+            Text(`蛋白 ${Math.round(log.proteinG as number)}g`)
+              .fontSize(fontSize.caption)
+              .fontColor(color.macroProtein)
+            Text(`碳水 ${Math.round(log.carbsG as number)}g`)
+              .fontSize(fontSize.caption)
+              .fontColor(color.macroCarbs)
+            Text(`脂肪 ${Math.round(log.fatG as number)}g`)
+              .fontSize(fontSize.caption)
+              .fontColor(color.macroFat)
+          }
+          .alignItems(VerticalAlign.Center)
+        }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)

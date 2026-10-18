@@ -7,6 +7,11 @@ import { DailySummaryService } from '../services/DailySummaryService';
 import { DailySummary } from '../models/DailySummary';
 import { CalorieRing } from '../components/CalorieRing';
 import { MetricCard } from '../components/MetricCard';
+import { MacroPanel } from '../components/MacroBar';
+import { WeekSparkline } from '../components/WeekSparkline';
+import { MacroRepository, MacroDayTotal, DayPoint } from '../repositories/MacroRepository';
+import { ProfileRepository } from '../repositories/ProfileRepository';
+import { MacroTarget } from '../models/Calculation';
 import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
 import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
 import { CalorieService } from '../services/CalorieService';
@@ -17,6 +22,12 @@ export struct HomePage {
   @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
   @StorageLink('selectedDate') @Watch('reload') selectedDate: string = '';
   @State summary: DailySummary | null = null;
+  /** 当日宏量实际摄入 + 是否真的录过宏量（区分"没吃"与"吃了没记"） */
+  @State macroDay: MacroDayTotal | null = null;
+  /** 宏量目标，来自体征自动推导或手动覆盖；null 表示尚未设置体征 */
+  @State macroTarget: MacroTarget | null = null;
+  /** 近 7 日趋势 */
+  @State trend: DayPoint[] = [];
 
   aboutToAppear(): void {
     this.reload();
@@ -33,6 +44,31 @@ export struct HomePage {
     } catch (e) {
       // 数据库错误时保留旧数据
     }
+    this.loadMacro();
+  }
+
+  private async loadMacro(): Promise<void> {
+    try {
+      const [day, target, pts] = await Promise.all([
+        MacroRepository.getDayTotal(this.selectedDate),
+        ProfileRepository.getMacroTarget(),
+        MacroRepository.getTrend(this.weekStart(), this.selectedDate)
+      ]);
+      this.macroDay = day;
+      this.macroTarget = target;
+      this.trend = pts;
+    } catch (e) {
+      // 宏量为增强能力，失败不影响主流程
+    }
+  }
+
+  /** 本周一（周一为一周之首，与 WeekSparkline 的槽位对齐） */
+  private weekStart(): string {
+    const sel = parseDateKey(this.selectedDate);
+    const dow = (sel.getDay() + 6) % 7;
+    const monday = new Date(sel);
+    monday.setDate(sel.getDate() - dow);
+    return toDateKey(monday);
   }
 
   private showDatePicker(): void {
@@ -192,6 +228,47 @@ export struct HomePage {
             })
         }
         .width('100%')
+
+        // 近 7 日趋势
+        WeekSparkline({
+          points: this.trend,
+          targetKcal: this.summary !== null ? this.summary.dailyCalorieBudget : 1800,
+          selectedDate: this.selectedDate
+        })
+
+        // 宏量营养素：仅在已设置体征（目标可推导）时显示
+        if (this.macroTarget !== null && this.macroDay !== null) {
+          MacroPanel({
+            actualProtein: this.macroDay.actual.proteinG,
+            actualCarbs: this.macroDay.actual.carbsG,
+            actualFat: this.macroDay.actual.fatG,
+            targetProtein: this.macroTarget.proteinG,
+            targetCarbs: this.macroTarget.carbsG,
+            targetFat: this.macroTarget.fatG
+          })
+
+          if (!this.macroDay.hasMacroData) {
+            Text('今天的记录还没有宏量数据，去「饮食」页补录或用 AI 拍照识别')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+              .width('100%')
+          }
+        } else {
+          // 未设体征时给出明确引导，而不是静默隐藏
+          Column({ space: 6 }) {
+            Text('设置体征，自动算出你的热量与宏量目标')
+              .fontSize(fontSize.body)
+              .fontColor(color.text)
+            Text('体重、身高、年龄、活动量 → BMR/TDEE → 每日目标')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+          }
+          .width('100%')
+          .padding(layout.cardPadding)
+          .backgroundColor(color.surfaceMuted)
+          .borderRadius(radius.card)
+          .alignItems(HorizontalAlign.Start)
+        }
       }
       .padding(layout.pagePadding)
       .constraintSize({ minHeight: '100%' })

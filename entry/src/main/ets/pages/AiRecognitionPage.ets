@@ -26,6 +26,10 @@ class AiEditParams {
   calories: number = 0;
   aiConfidence: number = 0;
   aiNotes: string = '';
+  /** V3：AI 估算的三大宏量，透传给编辑页预填 */
+  proteinG: number | null = null;
+  carbsG: number | null = null;
+  fatG: number | null = null;
 }
 
 @Component
@@ -162,6 +166,9 @@ export struct AiRecognitionPage {
     p.calories = this.result.estimatedTotalKcal;
     p.aiConfidence = this.result.confidence;
     p.aiNotes = this.result.notes;
+    p.proteinG = this.result.proteinG;
+    p.carbsG = this.result.carbsG;
+    p.fatG = this.result.fatG;
     this.navStack.pushPathByName('FoodEdit', p);
   }
 
@@ -372,6 +379,53 @@ export struct AiRecognitionPage {
                   .fontSize(fontSize.body)
                   .fontColor(color.text)
                   .width('100%')
+
+                // V3：三大宏量估算
+                if (this.result.hasMacros()) {
+                  Row({ space: space.xs }) {
+                    Column({ space: 2 }) {
+                      Text('蛋白')
+                        .fontSize(fontSize.caption)
+                        .fontColor(color.textHint)
+                      Text(`${this.result.proteinG}g`)
+                        .fontSize(fontSize.body)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(color.text)
+                    }
+                    .layoutWeight(1)
+
+                    Column({ space: 2 }) {
+                      Text('碳水')
+                        .fontSize(fontSize.caption)
+                        .fontColor(color.textHint)
+                      Text(`${this.result.carbsG}g`)
+                        .fontSize(fontSize.body)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(color.text)
+                    }
+                    .layoutWeight(1)
+
+                    Column({ space: 2 }) {
+                      Text('脂肪')
+                        .fontSize(fontSize.caption)
+                        .fontColor(color.textHint)
+                      Text(`${this.result.fatG}g`)
+                        .fontSize(fontSize.body)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(color.text)
+                    }
+                    .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .padding({ top: space.xs, bottom: space.xs })
+                  .backgroundColor(color.surfaceMuted)
+                  .borderRadius(radius.medium)
+                } else if (this.result.estimatedTotalKcal !== null) {
+                  Text('未能可靠估算宏量，可在下一步手动补录')
+                    .fontSize(fontSize.caption)
+                    .fontColor(color.textHint)
+                    .width('100%')
+                }
 
                 Text(`AI 置信度：${this.result.confidence.toFixed(2)}（自评，非准确率）`)
                   .fontSize(fontSize.caption)

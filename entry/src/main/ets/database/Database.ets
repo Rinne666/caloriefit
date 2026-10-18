@@ -14,6 +14,7 @@ import {
   SQL_TABLE_INFO
 } from './Schema';
 import { migrateFoodV1ToV2 } from './MigrationV1ToV2';
+import { migrateV2ToV3 } from './MigrationV2ToV3';
 
 const DOMAIN = 0x0001;
 const TAG = 'CalorieFitDB';
@@ -73,12 +74,13 @@ export class Database {
 
     const hasFood = await Database.tableExists(store, 'food_log');
     if (!hasFood) {
-      // 全新数据库：建 V2
+      // 全新数据库：建 V2 结构后直接升到 V3
       for (let i = 0; i < SQL_CREATE_ALL_V2.length; i++) {
         await store.executeSql(SQL_CREATE_ALL_V2[i]);
       }
       await store.executeSql(SQL_INIT_SETTINGS);
-      hilog.info(DOMAIN, TAG, 'fresh V2 database created');
+      await migrateV2ToV3(store);
+      hilog.info(DOMAIN, TAG, 'fresh database created at V3');
     } else {
       const cols = await Database.tableColumns(store, 'food_log');
       if (!cols.includes('entry_mode')) {
@@ -89,8 +91,10 @@ export class Database {
         throw new Error('food_log table has incomplete V2 structure');
       } else {
         // 已是 V2：补写版本号（处理迁移提交后、写版本前退出的情况）
-        hilog.info(DOMAIN, TAG, 'food_log already V2, skip migration');
+        hilog.info(DOMAIN, TAG, 'food_log already V2, skip V1->V2 migration');
       }
+      // V2 → V3 对全量路径统一执行，内部逐列探测，重入安全
+      await migrateV2ToV3(store);
     }
     store.version = DATABASE_VERSION;
     Database.store = store;

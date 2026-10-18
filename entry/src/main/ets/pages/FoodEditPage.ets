@@ -34,6 +34,10 @@ export struct FoodEditPage {
   @State kcalInput: string = '';
   @State totalKcalInput: string = '';
   @State aiNotes: string = '';
+  /** V3 宏量录入（克）。留空表示不记录，不以 0 冒充 */
+  @State proteinInput: string = '';
+  @State carbsInput: string = '';
+  @State fatInput: string = '';
   @State ready: boolean = false;
   private aiConfidence: number = 0;
 
@@ -51,6 +55,10 @@ export struct FoodEditPage {
         p.calories.toString() : '';
       this.aiConfidence = typeof p.aiConfidence === 'number' ? p.aiConfidence : 0;
       this.aiNotes = typeof p.aiNotes === 'string' ? p.aiNotes : '';
+      // AI 估算的宏量预填，允许用户覆盖
+      this.proteinInput = typeof p.proteinG === 'number' ? String(p.proteinG) : '';
+      this.carbsInput = typeof p.carbsG === 'number' ? String(p.carbsG) : '';
+      this.fatInput = typeof p.fatG === 'number' ? String(p.fatG) : '';
       this.ready = true;
     } else if (this.mode === 'edit' && this.recordId > 0) {
       this.loadRecord();
@@ -74,11 +82,51 @@ export struct FoodEditPage {
           this.weightInput = log.grams !== null ? log.grams.toString() : '';
           this.kcalInput = log.kcalPer100g !== null ? log.kcalPer100g.toString() : '';
         }
+        // 宏量与模式无关，两种都回填
+        this.proteinInput = log.proteinG !== null ? String(log.proteinG) : '';
+        this.carbsInput = log.carbsG !== null ? String(log.carbsG) : '';
+        this.fatInput = log.fatG !== null ? String(log.fatG) : '';
       }
       this.ready = true;
     } catch (e) {
       this.ready = true;
     }
+  }
+
+  /**
+   * 读取宏量输入。三项要么全空（不记录），要么全为 0-999 的整数。
+   * 部分填写视为录入不完整，返回 null 交由调用方提示，避免写入半套数据。
+   */
+  private readMacros(): { ok: boolean, p: number | null, c: number | null, f: number | null,
+    message: string } {
+    const texts = [this.proteinInput.trim(), this.carbsInput.trim(), this.fatInput.trim()];
+    const filled = texts.filter((t: string) => t.length > 0).length;
+    if (filled === 0) {
+      return { ok: true, p: null, c: null, f: null, message: '' };
+    }
+    if (filled < 3) {
+      return { ok: false, p: null, c: null, f: null,
+        message: '请把蛋白质、碳水、脂肪三项都填上，或三项都留空' };
+    }
+    const vals: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const v = parseFloat(texts[i]);
+      if (isNaN(v) || !Number.isInteger(v) || v < 0 || v > 999) {
+        return { ok: false, p: null, c: null, f: null,
+          message: '宏量需为 0-999 的整数（克）' };
+      }
+      vals.push(v);
+    }
+    return { ok: true, p: vals[0], c: vals[1], f: vals[2], message: '' };
+  }
+
+  /** 宏量按 Atwater 回算的热量，用于与总热量做一致性提示 */
+  private macroPreviewKcal(): number | null {
+    const m = this.readMacros();
+    if (!m.ok || m.p === null) {
+      return null;
+    }
+    return Math.round((m.p as number) * 4 + (m.c as number) * 4 + (m.f as number) * 9);
   }
 
   private previewCalories(): number | null {
@@ -113,8 +161,14 @@ export struct FoodEditPage {
           this.getUIContext().getPromptAction().showToast({ message: '整份热量需为 1-10000 的整数' });
           return;
         }
+        const macros = this.readMacros();
+        if (!macros.ok) {
+          this.getUIContext().getPromptAction().showToast({ message: macros.message });
+          return;
+        }
         const input = new FoodLogInput(this.date, this.name.trim(), this.mealType,
-          null, null, kcal, 1, this.aiConfidence, this.aiNotes.length > 0 ? this.aiNotes : null);
+          null, null, kcal, 1, this.aiConfidence, this.aiNotes.length > 0 ? this.aiNotes : null,
+          macros.p, macros.c, macros.f);
         if (this.recordId > 0) {
           await FoodRepository.update(this.recordId, input);
         } else {
@@ -133,8 +187,14 @@ export struct FoodEditPage {
           return;
         }
         const calories = CalorieService.foodCalories(weightP.value, kcalP.value);
+        const macros = this.readMacros();
+        if (!macros.ok) {
+          this.getUIContext().getPromptAction().showToast({ message: macros.message });
+          return;
+        }
         const input = new FoodLogInput(this.date, this.name.trim(), this.mealType,
-          weightP.value, kcalP.value, calories, 0, null, null);
+          weightP.value, kcalP.value, calories, 0, null, null,
+          macros.p, macros.c, macros.f);
         if (this.mode === 'edit' && this.recordId > 0) {
           await FoodRepository.update(this.recordId, input);
         } else {
@@ -313,6 +373,67 @@ export struct FoodEditPage {
               .alignItems(HorizontalAlign.Start)
               .padding(layout.cardPadding)
               .backgroundColor(color.foodLight)
+              .borderRadius(radius.card)
+              .width('100%')
+
+              // V3 宏量录入 —— 两种录入模式都适用
+              Column({ space: space.xs }) {
+                Text('三大宏量（克，可留空）')
+                  .fontSize(fontSize.secondary)
+                  .fontColor(color.textSecondary)
+                  .width('100%')
+
+                Row({ space: space.xxs }) {
+                  TextInput({ text: this.proteinInput, placeholder: '蛋白' })
+                    .type(InputType.Number)
+                    .height(layout.inputHeight)
+                    .fontSize(fontSize.body)
+                    .backgroundColor(color.surfaceMuted)
+                    .borderRadius(radius.medium)
+                    .layoutWeight(1)
+                    .onChange((v: string) => {
+                      this.proteinInput = v;
+                    })
+
+                  TextInput({ text: this.carbsInput, placeholder: '碳水' })
+                    .type(InputType.Number)
+                    .height(layout.inputHeight)
+                    .fontSize(fontSize.body)
+                    .backgroundColor(color.surfaceMuted)
+                    .borderRadius(radius.medium)
+                    .layoutWeight(1)
+                    .onChange((v: string) => {
+                      this.carbsInput = v;
+                    })
+
+                  TextInput({ text: this.fatInput, placeholder: '脂肪' })
+                    .type(InputType.Number)
+                    .height(layout.inputHeight)
+                    .fontSize(fontSize.body)
+                    .backgroundColor(color.surfaceMuted)
+                    .borderRadius(radius.medium)
+                    .layoutWeight(1)
+                    .onChange((v: string) => {
+                      this.fatInput = v;
+                    })
+                }
+                .width('100%')
+
+                if (this.macroPreviewKcal() !== null) {
+                  Text(`按蛋白4/碳水4/脂肪9 回算 ≈ ${this.macroPreviewKcal()} kcal`)
+                    .fontSize(fontSize.caption)
+                    .fontColor(color.textHint)
+                    .width('100%')
+                } else {
+                  Text('三项都填才会记录宏量，留空则不参与每日汇总')
+                    .fontSize(fontSize.caption)
+                    .fontColor(color.textHint)
+                    .width('100%')
+                }
+              }
+              .alignItems(HorizontalAlign.Start)
+              .padding(layout.cardPadding)
+              .backgroundColor(color.surfaceMuted)
               .borderRadius(radius.card)
               .width('100%')
             }

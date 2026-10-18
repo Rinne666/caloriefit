@@ -61,7 +61,9 @@ export class AiRecognitionService {
       stream: false,
       enable_thinking: false,
       temperature: 0.2,
-      max_tokens: 256,
+      // V3：响应新增 proteinG/carbsG/fatG 三个字段，256 偏紧，
+      // 中文 notes 又是高 token 消耗，提到 512 避免 JSON 被截断。
+      max_tokens: 512,
       response_format: responseFormat,
       messages: messages
     };

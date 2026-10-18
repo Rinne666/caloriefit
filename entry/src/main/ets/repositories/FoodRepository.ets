@@ -28,6 +28,25 @@ function mapRow(rs: relationalStore.ResultSet): FoodLog {
       aiNotes = rs.getString(notesIdx);
     }
   }
+
+  // 宏量与录入模式无关，两种模式都可能有值，故在分支外读取。
+  // 存量数据（V2 迁移上来）为 NULL，读出 null 而不是 0。
+  let proteinG: number | null = null;
+  let carbsG: number | null = null;
+  let fatG: number | null = null;
+  const pIdx = rs.getColumnIndex('protein_g');
+  const cIdx = rs.getColumnIndex('carbs_g');
+  const fIdx = rs.getColumnIndex('fat_g');
+  if (pIdx >= 0 && rs.getColumnTypeSync(pIdx) !== relationalStore.ColumnType.NULL) {
+    proteinG = rs.getDouble(pIdx);
+  }
+  if (cIdx >= 0 && rs.getColumnTypeSync(cIdx) !== relationalStore.ColumnType.NULL) {
+    carbsG = rs.getDouble(cIdx);
+  }
+  if (fIdx >= 0 && rs.getColumnTypeSync(fIdx) !== relationalStore.ColumnType.NULL) {
+    fatG = rs.getDouble(fIdx);
+  }
+
   return new FoodLog(
     rs.getLong(rs.getColumnIndex('id')),
     rs.getString(rs.getColumnIndex('date')),
@@ -39,6 +58,9 @@ function mapRow(rs: relationalStore.ResultSet): FoodLog {
     entryMode,
     aiConfidence,
     aiNotes,
+    proteinG,
+    carbsG,
+    fatG,
     rs.getLong(rs.getColumnIndex('created_at')),
     rs.getLong(rs.getColumnIndex('updated_at'))
   );
@@ -59,6 +81,9 @@ export class FoodRepository {
       'entry_mode': input.entryMode,
       'ai_confidence': input.aiConfidence,
       'ai_notes': input.aiNotes,
+      'protein_g': input.proteinG,
+      'carbs_g': input.carbsG,
+      'fat_g': input.fatG,
       'created_at': now,
       'updated_at': now
     };
@@ -77,6 +102,9 @@ export class FoodRepository {
       'entry_mode': input.entryMode,
       'ai_confidence': input.aiConfidence,
       'ai_notes': input.aiNotes,
+      'protein_g': input.proteinG,
+      'carbs_g': input.carbsG,
+      'fat_g': input.fatG,
       'updated_at': Date.now()
     };
     const predicates = new relationalStore.RdbPredicates(TABLE);
