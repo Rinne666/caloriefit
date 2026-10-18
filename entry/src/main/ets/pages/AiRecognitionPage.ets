@@ -5,6 +5,8 @@
 
 import { PhotoPickerService } from '../services/PhotoPickerService';
 import { ImageProcessor } from '../services/ImageProcessor';
+import { fileIo } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
 import { AiRecognitionService } from '../services/AiRecognitionService';
 import { AiConfigRepository } from '../repositories/AiConfigRepository';
 import { AiCredentialStore } from '../repositories/AiCredentialStore';
@@ -15,8 +17,10 @@ import { AiErrorCode, AiError, aiErrorText, AI_LOW_CONFIDENCE } from '../common/
 import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { formatNumber } from '../common/DateUtils';
 
-class AiRecognitionParams {
-  date: string = '';
+/** 内置示例图文件名，放在 resources/rawfile 下 */
+const SAMPLE_RAW_FILE: string = 'sample_meal.jpg';
+
+class AiRecognitionParams {  date: string = '';
 }
 
 class AiEditParams {
@@ -51,8 +55,38 @@ export struct AiRecognitionPage {
     this.demoMode = AiConfigRepository.isDemoMode();
   }
 
-  private bumpRefresh(): void {
-    const cur = AppStorage.get<number>('refreshTick') ?? 0;
+  /**
+   * 载入内置示例图，让整条识别链路在没有相册的环境下也能跑通。
+   *
+   * 为什么要多这一步拷贝：
+   *   $rawfile() 在本 SDK 返回的是 **Resource 对象**，不是路径字符串；
+   *   而 ImageProcessor.prepareImage() 走 fileIo.open(uri: string)，
+   *   需要真实路径。所以先把 rawfile 的字节读出来写到 cacheDir，
+   *   拿到一个货真价实的字符串路径。
+   */
+  private async useSampleImage(): Promise<void> {
+    if (this.busy) {
+      return;
+    }
+    try {
+      const host = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const bytes = await host.resourceManager.getRawFileContent(SAMPLE_RAW_FILE);
+      const dst = `${host.cacheDir}/${SAMPLE_RAW_FILE}`;
+      const f = fileIo.openSync(dst, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE
+        | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(f.fd, bytes.buffer);
+      fileIo.closeSync(f);
+      this.photoUri = dst;
+      this.result = null;
+      this.hasError = false;
+      this.errorMessage = '';
+    } catch (e) {
+      this.hasError = true;
+      this.errorMessage = '示例图载入失败，请改用相册或拍照';
+    }
+  }
+
+  private bumpRefresh(): void {    const cur = AppStorage.get<number>('refreshTick') ?? 0;
     AppStorage.setOrCreate<number>('refreshTick', cur + 1);
   }
 
@@ -240,6 +274,28 @@ export struct AiRecognitionPage {
                   })
               }
               .width('100%')
+
+              /**
+               * 内置示例图。
+               *
+               * 为什么需要它：模拟器只有 /data/local/tmp 可写，
+               * 图库里塞不进照片，「从相册选择」在模拟器上永远返回空。
+               * 这条入口让整条链路在任何设备上都能走通 ——
+               * 配了 Key 就走真实识别，演示模式则返回本地模拟数据。
+               *
+               * 放 rawfile 而不是 media：prepareImage() 走 fileIo.open()
+               * 需要真实文件路径，$rawfile() 正好给字符串路径；
+               * $r('app.media.*') 给的是 Resource 对象，喂不进 fileIo。
+               */
+              Button('没有照片？用内置示例图试一下')
+                .width('100%')
+                .height(40)
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+                .backgroundColor(Color.Transparent)
+                .onClick(() => {
+                  this.useSampleImage();
+                })
             }
             .width('100%')
             .padding(layout.cardPadding)
