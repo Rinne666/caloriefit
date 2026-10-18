@@ -11,7 +11,7 @@ export struct MetricCard {
   @Prop valueText: string;
   @Prop unit: string;
   @Prop progress: number;
-  @Prop barColor: string = color.primary;
+  @Prop barColor: ResourceColor = color.primary;
   @Prop goalText: string = '';
 
   build() {

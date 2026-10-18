@@ -1,8 +1,39 @@
 {
   "color": [
-    {
-      "name": "start_window_background",
-      "value": "#000000"
-    }
+    { "name": "start_window_background", "value": "#0C0C0C" },
+
+    { "name": "primary", "value": "#D5EE6E" },
+    { "name": "primary_pressed", "value": "#C2DB5C" },
+    { "name": "primary_light", "value": "#24290F" },
+    { "name": "on_primary", "value": "#0C0C0C" },
+
+    { "name": "food", "value": "#FF9F45" },
+    { "name": "food_light", "value": "#2A1F16" },
+
+    { "name": "activity", "value": "#0A84FF" },
+    { "name": "activity_light", "value": "#12253A" },
+
+    { "name": "bg", "value": "#0C0C0C" },
+    { "name": "surface", "value": "#1C1C1E" },
+    { "name": "surface_muted", "value": "#232326" },
+
+    { "name": "text", "value": "#FFFFFF" },
+    { "name": "text_secondary", "value": "#A7A7AB" },
+    { "name": "text_hint", "value": "#82838B" },
+
+    { "name": "border", "value": "#2F2F33" },
+    { "name": "divider", "value": "#2F2F33" },
+    { "name": "ring_track", "value": "#232326" },
+
+    { "name": "danger", "value": "#FF2E63" },
+    { "name": "danger_light", "value": "#2A1520" },
+
+    { "name": "disabled_bg", "value": "#232326" },
+    { "name": "disabled_text", "value": "#444449" },
+
+    { "name": "macro_protein", "value": "#A78BFA" },
+    { "name": "macro_carbs", "value": "#0A84FF" },
+    { "name": "macro_fat", "value": "#4CC94E" },
+    { "name": "macro_ok", "value": "#4CC94E" }
   ]
 }
