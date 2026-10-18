@@ -6,7 +6,7 @@ import { AiConfigRepository } from '../repositories/AiConfigRepository';
 import { AiCredentialStore } from '../repositories/AiCredentialStore';
 import { AppDialogService } from '../services/AppDialogService';
 import { AiConfig } from '../models/AiConfig';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { AiDefaults } from '../common/AiConstants';
 
 /** Base URL 校验：仅允许 HTTPS 且 host 属于百炼域名 */
@@ -257,8 +257,10 @@ export struct AiSettingsPage {
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
       .backgroundColor(color.bg)
+      .linearGradient(pageGradient())
     }
     .title('AI 设置')
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
   }
 }

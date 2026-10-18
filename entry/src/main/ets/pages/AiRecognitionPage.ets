@@ -12,7 +12,7 @@ import { AppDialogService } from '../services/AppDialogService';
 import { AiImagePayload } from '../models/AiImagePayload';
 import { AiRecognitionResult } from '../models/AiRecognitionResult';
 import { AiErrorCode, AiError, aiErrorText, AI_LOW_CONFIDENCE } from '../common/AiConstants';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { formatNumber } from '../common/DateUtils';
 
 class AiRecognitionParams {
@@ -488,9 +488,11 @@ export struct AiRecognitionPage {
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
       .backgroundColor(color.bg)
+      .linearGradient(pageGradient())
     }
     .title('AI 拍照识别')
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
     .onReady((ctx: NavDestinationContext) => {
       const p = ctx.pathInfo.param as AiRecognitionParams | null | undefined;
       this.buildParams(p);

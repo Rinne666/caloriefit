@@ -13,7 +13,10 @@
  *   · 数值与目标同时变红时，色弱用户仍能靠刻度位置判断
  */
 
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, space, layout,
+  glass, glassGradient, glassShadow, toneVeil
+} from '../common/DesignTokens';
 import { CalorieEngine } from '../services/CalorieEngine';
 
 @Component
@@ -23,28 +26,38 @@ export struct MacroBar {
   @Prop targetG: number = 0;
   @Prop barColor: ResourceColor = color.primary;
 
-  private get isOver(): boolean {
+  /**
+   * 以下四个刻意用普通方法而不是 `private get`。
+   *
+   * 实测 ArkUI 的 @Component struct 中 `private get` 求值不可靠：
+   *   · ratio 返回 NaN  → .width("NaN%") 整根填充条静默消失
+   *   · markerPos 返回 NaN → .margin({left: NaN}) 退化成 0，刻度线贴到最左边
+   * 编译通过、日志无异常，上面的 "22g / 169g" 文字也完全正常，
+   * 只有把截图放大到原始像素才看得出进度条是空的 —— 纯靠读数值永远发现不了。
+   * WeekSparkline 早就为此把 get 换成了方法，这里是同一类漏网。
+   */
+  private isOver(): boolean {
     return this.actualG > this.targetG;
   }
 
-  private get ratio(): number {
+  private ratio(): number {
     return CalorieEngine.macroRatio(this.actualG, this.targetG);
   }
 
   /** 目标刻度位置：超标时贴在末端，表示"已越过目标" */
-  private get markerPos(): string {
+  private markerPos(): string {
     if (this.targetG <= 0) {
       return '0%';
     }
     return `${Math.min(100, this.targetG / Math.max(this.targetG, this.actualG) * 100)}%`;
   }
 
-  private get fillColor(): ResourceColor {
-    return this.isOver ? color.danger : this.barColor;
+  private fillColor(): ResourceColor {
+    return this.isOver() ? color.danger : this.barColor;
   }
 
-  private get valueColor(): ResourceColor {
-    return this.isOver ? color.danger : color.text;
+  private valueColor(): ResourceColor {
+    return this.isOver() ? color.danger : color.text;
   }
 
   build() {
@@ -58,8 +71,8 @@ export struct MacroBar {
 
         Text(`${Math.round(this.actualG)}g / ${Math.round(this.targetG)}g`)
           .fontSize(fontSize.secondary)
-          .fontWeight(this.isOver ? FontWeight.Bold : FontWeight.Normal)
-          .fontColor(this.valueColor)
+          .fontWeight(this.isOver() ? FontWeight.Bold : FontWeight.Normal)
+          .fontColor(this.valueColor())
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -74,22 +87,22 @@ export struct MacroBar {
           .backgroundColor(color.ringTrack)
 
         Row()
-          .width(`${this.ratio * 100}%`)
+          .width(`${this.ratio() * 100}%`)
           .height(layout.progressHeight)
           .borderRadius(layout.progressHeight / 2)
-          .backgroundColor(this.fillColor)
+          .backgroundColor(this.fillColor())
 
         // 目标刻度竖线
         Row()
           .width(2)
           .height(layout.progressHeight + 4)
           .backgroundColor(color.textHint)
-          .margin({ left: this.markerPos })
+          .margin({ left: this.markerPos() })
       }
       .width('100%')
       .height(layout.progressHeight + 4)
 
-      if (this.isOver) {
+      if (this.isOver()) {
         Text(`超出 ${Math.round(this.actualG - this.targetG)}g`)
           .fontSize(fontSize.caption)
           .fontColor(color.danger)
@@ -133,9 +146,11 @@ export struct MacroPanel {
     }
     .width('100%')
     .padding(layout.cardPadding)
-    .backgroundColor(color.surface)
-    .borderRadius(radius.card)
-    .border({ width: layout.borderWidth, color: color.border })
+    .linearGradient(glassGradient(toneVeil('macro')))
+    .borderRadius(glass.cardRadius)
+    .border({ width: glass.borderWidth, color: color.glassBorder })
+    .backdropBlur(glass.blurRadius)
+    .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
     .alignItems(HorizontalAlign.Start)
   }
 }

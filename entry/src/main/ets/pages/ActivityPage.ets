@@ -10,7 +10,10 @@ import { ExerciseLog } from '../models/ExerciseLog';
 import { AppSettings } from '../models/AppSettings';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, space, radius, layout, pageGradient,
+  toneVeil, glass, glassGradient, glassShadow
+} from '../common/DesignTokens';
 import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
 import { EXERCISE_LABELS } from '../common/Constants';
 import { CalorieService } from '../services/CalorieService';
@@ -218,9 +221,10 @@ export struct ActivityPage {
             Button('保存')
               .height(layout.buttonHeight)
               .fontSize(fontSize.body)
-              .fontColor(color.onPrimary)
+              .fontColor('#FFFFFF')
               .backgroundColor(color.activity)
-              .borderRadius(radius.large)
+              .borderRadius(14)
+              .shadow(glassShadow(12, 6))
               .onClick(() => {
                 this.saveSteps();
               })
@@ -230,12 +234,14 @@ export struct ActivityPage {
             .fontSize(fontSize.caption)
             .fontColor(color.textHint)
         }
-        .alignItems(HorizontalAlign.Start)
-        .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
         .width('100%')
+        .padding(layout.cardPadding)
+        .linearGradient(glassGradient(toneVeil('steps')))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
+        .alignItems(HorizontalAlign.Start)
 
         // 运动记录列表
         Column({ space: space.xs }) {
@@ -269,7 +275,7 @@ export struct ActivityPage {
                 Text(`${formatNumber(log.caloriesBurned)} kcal`)
                   .fontSize(fontSize.body)
                   .fontWeight(FontWeight.Medium)
-                  .fontColor(color.activity)
+                  .fontColor(color.text)
 
                 Text('删除')
                   .fontSize(fontSize.caption)
@@ -280,28 +286,38 @@ export struct ActivityPage {
                   })
               }
               .width('100%')
-              .padding({ top: space.sm, bottom: space.sm })
+              .padding({ top: space.sm, bottom: space.sm, left: space.sm, right: space.sm })
+              // 运动类型决定色调：跑步永远同色，不同类型自动错开
+              .linearGradient({
+                angle: 135,
+                colors: [[toneVeil(EXERCISE_LABELS[log.type]), 0], [color.glassFill, 1]]
+              })
+              .borderRadius(radius.medium)
+              .border({ width: 1, color: color.glassBorder })
               .onClick(() => {
                 this.goEdit(log);
               })
             }, (log: ExerciseLog) => log.id.toString())
           }
         }
-        .alignItems(HorizontalAlign.Start)
-        .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
         .width('100%')
+        .padding(layout.cardPadding)
+        .linearGradient(glassGradient(toneVeil('exercise')))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
+        .alignItems(HorizontalAlign.Start)
 
         // 添加运动
         Button('+ 添加运动')
           .width('100%')
           .height(layout.buttonHeight)
           .fontSize(fontSize.body)
-          .fontColor(color.onPrimary)
+          .fontColor('#FFFFFF')
           .backgroundColor(color.activity)
-          .borderRadius(radius.large)
+          .borderRadius(14)
+          .shadow(glassShadow(12, 6))
           .onClick(() => {
             this.goAdd();
           })
@@ -314,6 +330,7 @@ export struct ActivityPage {
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
   }
 }
 

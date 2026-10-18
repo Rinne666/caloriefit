@@ -12,7 +12,11 @@ import { WeekSparkline } from '../components/WeekSparkline';
 import { MacroRepository, MacroDayTotal, DayPoint } from '../repositories/MacroRepository';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { MacroTarget } from '../models/Calculation';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, space, radius, layout,
+  glass, glassGradient, glassShadow, buttonGlow, toneVeil,
+  pageGradient, heroGradient, primaryButtonGradient
+} from '../common/DesignTokens';
 import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
 import { CalorieService } from '../services/CalorieService';
 
@@ -122,11 +126,19 @@ export struct HomePage {
         }
         .width('100%')
 
-        // 热量大卡片
+        // 主视觉卡：整页唯一的高饱和色块。
+        // 原型里的「居中大图」在这个 App 里没有对应物 —— 热量环本身就是主图，
+        // 所以让它占据卡片正中，其余信息退到上下两行。
+        // 文字一律用白：这张卡在浅色主题下也是深色饱和底，白字两种主题都成立。
         Column({ space: space.lg }) {
+          Text('今日热量预算')
+            .fontSize(fontSize.secondary)
+            .fontColor('#CCFFFFFF')
+
           CalorieRing({
             consumed: this.summary !== null ? this.summary.consumedKcal : 0,
-            budget: this.summary !== null ? this.summary.dailyCalorieBudget : 1800
+            budget: this.summary !== null ? this.summary.dailyCalorieBudget : 1800,
+            onHero: true
           })
 
           Row() {
@@ -134,10 +146,10 @@ export struct HomePage {
               Text(formatNumber(this.summary !== null ? this.summary.consumedKcal : 0))
                 .fontSize(fontSize.metric)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(color.food)
+                .fontColor('#FFFFFF')
               Text('已摄入 kcal')
                 .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+                .fontColor('#B3FFFFFF')
             }
             .alignItems(HorizontalAlign.Center)
             .layoutWeight(1)
@@ -146,10 +158,10 @@ export struct HomePage {
               Text(formatNumber(this.summary !== null ? this.summary.burnedKcal : 0))
                 .fontSize(fontSize.metric)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(color.activity)
+                .fontColor('#FFFFFF')
               Text('活动消耗 kcal')
                 .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+                .fontColor('#B3FFFFFF')
             }
             .alignItems(HorizontalAlign.Center)
             .layoutWeight(1)
@@ -158,10 +170,10 @@ export struct HomePage {
               Text(formatNumber(this.summary !== null ? this.summary.dailyCalorieBudget : 1800))
                 .fontSize(fontSize.metric)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(color.text)
+                .fontColor('#FFFFFF')
               Text('饮食预算 kcal')
                 .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+                .fontColor('#B3FFFFFF')
             }
             .alignItems(HorizontalAlign.Center)
             .layoutWeight(1)
@@ -169,9 +181,10 @@ export struct HomePage {
           .width('100%')
         }
         .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
+        .linearGradient(heroGradient())
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .shadow(glassShadow(glass.shadowRadius + 6, glass.shadowOffsetY + 4))
         .alignItems(HorizontalAlign.Center)
         .width('100%')
 
@@ -208,15 +221,17 @@ export struct HomePage {
         .alignItems(VerticalAlign.Top)
         .width('100%')
 
-        // 快捷操作
+        // 快捷操作：一主一次。主按钮用渐变面 + 辉光投影做立体感，
+        // 次按钮保持实色 —— 原型里只有 “Buy Now” 有阴影，正是这个意思。
         Row({ space: space.md }) {
           Button('记录饮食')
             .layoutWeight(1)
             .height(layout.buttonHeight)
             .fontSize(fontSize.body)
             .fontColor(color.onPrimary)
-            .backgroundColor(color.primary)
-            .borderRadius(radius.large)
+            .linearGradient(primaryButtonGradient())
+            .borderRadius(14)
+            .shadow(buttonGlow())
             .onClick(() => {
               this.goFoodEdit();
             })
@@ -225,9 +240,10 @@ export struct HomePage {
             .layoutWeight(1)
             .height(layout.buttonHeight)
             .fontSize(fontSize.body)
-            .fontColor(color.onPrimary)
+            .fontColor('#FFFFFF')
             .backgroundColor(color.activity)
-            .borderRadius(radius.large)
+            .borderRadius(14)
+            .shadow(glassShadow(12, 6))
             .onClick(() => {
               this.goActivityEdit();
             })
@@ -270,8 +286,14 @@ export struct HomePage {
           }
           .width('100%')
           .padding(layout.cardPadding)
-          .backgroundColor(color.surfaceMuted)
-          .borderRadius(radius.card)
+          .linearGradient({
+            angle: 160,
+            colors: [[toneVeil('onboard'), 0], [color.glassFillStrong, 1]]
+          })
+          .borderRadius(glass.cardRadius)
+          .border({ width: glass.borderWidth, color: color.glassBorder })
+          .backdropBlur(glass.blurRadius)
+          .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
           .alignItems(HorizontalAlign.Start)
         }
       }
@@ -283,6 +305,7 @@ export struct HomePage {
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
   }
 }
 

@@ -1,9 +1,9 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#FFFFFF" },
+    { "name": "start_window_background", "value": "#EDF1FA" },
 
     { "name": "primary", "value": "#147A5E" },
-    { "name": "primary_pressed", "value": "#105E49" },
+    { "name": "primary_pressed", "value": "#0E6149" },
     { "name": "primary_light", "value": "#E7F5EF" },
     { "name": "on_primary", "value": "#FFFFFF" },
 
@@ -13,9 +13,9 @@
     { "name": "activity", "value": "#1F6FCE" },
     { "name": "activity_light", "value": "#EAF2FF" },
 
-    { "name": "bg", "value": "#F7F9F8" },
+    { "name": "bg", "value": "#EDF1FA" },
     { "name": "surface", "value": "#FFFFFF" },
-    { "name": "surface_muted", "value": "#F0F4F2" },
+    { "name": "surface_muted", "value": "#F1F4FA" },
 
     { "name": "text", "value": "#1B2B24" },
     { "name": "text_secondary", "value": "#5E6F68" },
@@ -34,6 +34,25 @@
     { "name": "macro_protein", "value": "#147A5E" },
     { "name": "macro_carbs", "value": "#1F6FCE" },
     { "name": "macro_fat", "value": "#A85A1B" },
-    { "name": "macro_ok", "value": "#3F8F4E" }
+    { "name": "macro_ok", "value": "#3F8F4E" },
+
+    { "name": "page_deep", "value": "#DEE6FB" },
+    { "name": "page_mid", "value": "#E3D8FA" },
+    { "name": "page_glow", "value": "#FCE3CC" },
+
+    { "name": "glass_fill", "value": "#B8FFFFFF" },
+    { "name": "glass_fill_str", "value": "#DCFFFFFF" },
+    { "name": "glass_border", "value": "#73FFFFFF" },
+    { "name": "glass_shadow", "value": "#1F3A4A6E" },
+
+    { "name": "hero_a", "value": "#2B6FE0" },
+    { "name": "hero_b", "value": "#6B23C0" },
+
+    { "name": "tone_ice_veil", "value": "#383D6FD8" },
+    { "name": "tone_cream_veil", "value": "#38C9A03A" },
+    { "name": "tone_steel_veil", "value": "#38505C68" },
+    { "name": "tone_amber_veil", "value": "#38D9793A" },
+
+    { "name": "btn_glow", "value": "#59147A5E" }
   ]
 }

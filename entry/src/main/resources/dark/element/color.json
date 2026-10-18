@@ -1,9 +1,9 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#0C0C0C" },
+    { "name": "start_window_background", "value": "#05060E" },
 
     { "name": "primary", "value": "#D5EE6E" },
-    { "name": "primary_pressed", "value": "#C2DB5C" },
+    { "name": "primary_pressed", "value": "#B8D248" },
     { "name": "primary_light", "value": "#24290F" },
     { "name": "on_primary", "value": "#0C0C0C" },
 
@@ -13,27 +13,46 @@
     { "name": "activity", "value": "#0A84FF" },
     { "name": "activity_light", "value": "#12253A" },
 
-    { "name": "bg", "value": "#0C0C0C" },
-    { "name": "surface", "value": "#1C1C1E" },
-    { "name": "surface_muted", "value": "#232326" },
+    { "name": "bg", "value": "#05060E" },
+    { "name": "surface", "value": "#16182A" },
+    { "name": "surface_muted", "value": "#1D2033" },
 
     { "name": "text", "value": "#FFFFFF" },
-    { "name": "text_secondary", "value": "#A7A7AB" },
-    { "name": "text_hint", "value": "#82838B" },
+    { "name": "text_secondary", "value": "#B9BCCB" },
+    { "name": "text_hint", "value": "#8B8FA3" },
 
-    { "name": "border", "value": "#2F2F33" },
-    { "name": "divider", "value": "#2F2F33" },
-    { "name": "ring_track", "value": "#232326" },
+    { "name": "border", "value": "#2F3247" },
+    { "name": "divider", "value": "#2F3247" },
+    { "name": "ring_track", "value": "#23263C" },
 
     { "name": "danger", "value": "#FF2E63" },
     { "name": "danger_light", "value": "#2A1520" },
 
-    { "name": "disabled_bg", "value": "#232326" },
-    { "name": "disabled_text", "value": "#444449" },
+    { "name": "disabled_bg", "value": "#1D2033" },
+    { "name": "disabled_text", "value": "#565A70" },
 
     { "name": "macro_protein", "value": "#A78BFA" },
     { "name": "macro_carbs", "value": "#0A84FF" },
     { "name": "macro_fat", "value": "#4CC94E" },
-    { "name": "macro_ok", "value": "#4CC94E" }
+    { "name": "macro_ok", "value": "#4CC94E" },
+
+    { "name": "page_deep", "value": "#05060E" },
+    { "name": "page_mid", "value": "#16113A" },
+    { "name": "page_glow", "value": "#06304A" },
+
+    { "name": "glass_fill", "value": "#1AFFFFFF" },
+    { "name": "glass_fill_str", "value": "#2EFFFFFF" },
+    { "name": "glass_border", "value": "#3DFFFFFF" },
+    { "name": "glass_shadow", "value": "#73000000" },
+
+    { "name": "hero_a", "value": "#2E74E8" },
+    { "name": "hero_b", "value": "#5A1FB8" },
+
+    { "name": "tone_ice_veil", "value": "#4D3D6FD8" },
+    { "name": "tone_cream_veil", "value": "#4DC9A03A" },
+    { "name": "tone_steel_veil", "value": "#4D505C68" },
+    { "name": "tone_amber_veil", "value": "#4DD9793A" },
+
+    { "name": "btn_glow", "value": "#66D5EE6E" }
   ]
 }

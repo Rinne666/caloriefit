@@ -7,7 +7,10 @@ import { SettingsRepository } from '../repositories/SettingsRepository';
 import { FoodLog } from '../models/FoodLog';
 import { AppSettings } from '../models/AppSettings';
 import { EmptyState } from '../components/EmptyState';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, space, radius, layout, pageGradient,
+  toneVeil, glass, glassGradient, glassShadow, primaryButtonGradient, buttonGlow
+} from '../common/DesignTokens';
 import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
 import { MEAL_LABELS } from '../common/Constants';
 
@@ -171,7 +174,12 @@ export struct FoodPage {
         })
     }
     .width('100%')
-    .padding({ top: space.sm, bottom: space.sm })
+    .padding({ top: space.sm, bottom: space.sm, left: space.sm, right: space.sm })
+    // 每条记录按名称哈希拿自己的情绪色调 —— 同一条永远是同一个色，
+    // 同一餐里不同的食物则大概率不同。色块统一，排版统一，只有色调在变。
+    .linearGradient({ angle: 135, colors: [[toneVeil(log.name), 0], [color.glassFill, 1]] })
+    .borderRadius(radius.medium)
+    .border({ width: 1, color: color.glassBorder })
     .onClick(() => {
       this.goEdit(log);
     })
@@ -207,52 +215,67 @@ export struct FoodPage {
         .width('100%')
 
         // 每日摄入汇总卡
-        Row() {
-          Column({ space: 4 }) {
-            Text(`${formatNumber(this.totalCalories())} / ${formatNumber(this.budget)} kcal`)
-              .fontSize(fontSize.metric)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(color.food)
-            Text('已摄入 / 每日饮食预算')
-              .fontSize(fontSize.caption)
-              .fontColor(color.textHint)
+        Column() {
+          Row() {
+            Column({ space: 4 }) {
+              Text(`${formatNumber(this.totalCalories())} / ${formatNumber(this.budget)} kcal`)
+                .fontSize(fontSize.metric)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(color.text)
+              Text('已摄入 / 每日饮食预算')
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
           }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
+          .width('100%')
         }
-        .padding(layout.cardPadding)
-        .backgroundColor(color.foodLight)
-        .borderRadius(radius.card)
         .width('100%')
+        .padding(layout.cardPadding)
+        .linearGradient({
+          angle: 160,
+          colors: [[toneVeil('budget'), 0], [color.glassFillStrong, 1]]
+        })
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
 
         // AI 拍照识别入口
-        Row({ space: space.sm }) {
-          Text('📷')
-            .fontSize(22)
-          Column({ space: 2 }) {
-            Text('AI 拍照识别')
-              .fontSize(fontSize.body)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(color.primary)
-            Text('拍一张照片，AI 估算整份热量')
-              .fontSize(fontSize.caption)
+        Column() {
+          Row({ space: space.sm }) {
+            Text('📷')
+              .fontSize(22)
+            Column({ space: 2 }) {
+              Text('AI 拍照识别')
+                .fontSize(fontSize.body)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(color.text)
+              Text('拍一张照片，AI 估算整份热量')
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text('›')
+              .fontSize(fontSize.sectionTitle)
               .fontColor(color.textHint)
           }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-
-          Text('›')
-            .fontSize(fontSize.sectionTitle)
-            .fontColor(color.textHint)
+          .width('100%')
+          .onClick(() => {
+            this.navStack.pushPathByName('AiRecognition',
+              new AiRecognitionNavParams(this.selectedDate));
+          })
         }
-        .padding(layout.cardPadding)
-        .backgroundColor(color.primaryLight)
-        .borderRadius(radius.card)
         .width('100%')
-        .onClick(() => {
-          this.navStack.pushPathByName('AiRecognition',
-            new AiRecognitionNavParams(this.selectedDate));
-        })
+        .padding(layout.cardPadding)
+        .linearGradient(glassGradient(toneVeil('ai')))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
 
         if (this.foods.length === 0) {
           EmptyState({
@@ -264,6 +287,10 @@ export struct FoodPage {
           })
         } else {
           ForEach(MEAL_LABELS, (label: string, index: number) => {
+            // 玻璃外壳写在这里而不是抽成卡片组件：
+            // 卡片本身就在 ForEach 里，需要带参的 builder，
+            // 而 @BuilderParam 不支持柯里化，套一层只会更绕。
+            // 层次与其余卡片完全一致。
             Column({ space: space.xs }) {
               Row() {
                 Text(label)
@@ -288,11 +315,14 @@ export struct FoodPage {
                 }, (log: FoodLog) => log.id.toString())
               }
             }
-            .padding(layout.cardPadding)
-            .backgroundColor(color.surface)
-            .borderRadius(radius.card)
-            .border({ width: layout.borderWidth, color: color.border })
             .width('100%')
+            .padding(layout.cardPadding)
+            .linearGradient(glassGradient(toneVeil(label)))
+            .borderRadius(glass.cardRadius)
+            .border({ width: glass.borderWidth, color: color.glassBorder })
+            .backdropBlur(glass.blurRadius)
+            .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
+            .alignItems(HorizontalAlign.Start)
           }, (label: string) => label)
         }
 
@@ -302,8 +332,9 @@ export struct FoodPage {
           .height(layout.buttonHeight)
           .fontSize(fontSize.body)
           .fontColor(color.onPrimary)
-          .backgroundColor(color.primary)
-          .borderRadius(radius.large)
+          .linearGradient(primaryButtonGradient())
+          .borderRadius(14)
+          .shadow(buttonGlow())
           .onClick(() => {
             this.goAdd();
           })
@@ -316,6 +347,7 @@ export struct FoodPage {
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
   }
 
   private mealSubtotal(mealType: number): number {

@@ -50,6 +50,30 @@ export interface ColorTokens {
   macroCarbs: ResourceColor;
   macroFat: ResourceColor;
   macroOk: ResourceColor;
+
+  /** V4 高饱和氛围底（页面级三段渐变） */
+  pageDeep: ResourceColor;
+  pageMid: ResourceColor;
+  pageGlow: ResourceColor;
+
+  /** V4 玻璃拟态层 */
+  glassFill: ResourceColor;
+  glassFillStrong: ResourceColor;
+  glassBorder: ResourceColor;
+  glassShadow: ResourceColor;
+
+  /** V4 主视觉饱和双色调 */
+  heroA: ResourceColor;
+  heroB: ResourceColor;
+
+  /** V4 卡片情绪色调 veil（冰蓝 / 奶黄 / 金属灰 / 暖橙） */
+  toneIceVeil: ResourceColor;
+  toneCreamVeil: ResourceColor;
+  toneSteelVeil: ResourceColor;
+  toneAmberVeil: ResourceColor;
+
+  /** V4 主按钮辉光 */
+  btnGlow: ResourceColor;
 }
 
 export const color: ColorTokens = {
@@ -85,7 +109,26 @@ export const color: ColorTokens = {
   macroProtein: $r('app.color.macro_protein'),
   macroCarbs: $r('app.color.macro_carbs'),
   macroFat: $r('app.color.macro_fat'),
-  macroOk: $r('app.color.macro_ok')
+  macroOk: $r('app.color.macro_ok'),
+
+  pageDeep: $r('app.color.page_deep'),
+  pageMid: $r('app.color.page_mid'),
+  pageGlow: $r('app.color.page_glow'),
+
+  glassFill: $r('app.color.glass_fill'),
+  glassFillStrong: $r('app.color.glass_fill_str'),
+  glassBorder: $r('app.color.glass_border'),
+  glassShadow: $r('app.color.glass_shadow'),
+
+  heroA: $r('app.color.hero_a'),
+  heroB: $r('app.color.hero_b'),
+
+  toneIceVeil: $r('app.color.tone_ice_veil'),
+  toneCreamVeil: $r('app.color.tone_cream_veil'),
+  toneSteelVeil: $r('app.color.tone_steel_veil'),
+  toneAmberVeil: $r('app.color.tone_amber_veil'),
+
+  btnGlow: $r('app.color.btn_glow')
 };
 
 // 字号：用于 fontSize()，单位 fp
@@ -260,3 +303,145 @@ export const motion: MotionTokens = {
   durationSlow: 450,
   curveEaseOut: Curve.EaseOut
 };
+
+
+/* ==================================================================
+ * V4：高饱和背景 + 玻璃拟态卡片
+ * ------------------------------------------------------------------
+ * 这一版把视觉语言换成「海报式商品卡」：
+ *   · 页面底改成高饱和三段渐变，负责情绪氛围
+ *   · 卡片在半透明玻璃上叠一层情绪色调 veil，浮在氛围之上
+ *   · 同一个页面里的卡片用不同色调，但字体/圆角/排版完全一致
+ *
+ * 两个关键决定：
+ *
+ * 1) 渐变与毛玻璃一律走函数，不在页面里手写字面量。
+ *    渐变色标一旦散落到十几个页面，深浅色切换就会漏。
+ *    现在改色只动 color.json，调角度只动这里。
+ *
+ * 2) 卡片色调由「内容哈希」决定，而不是随手在页面里挑。
+ *    同一份数据永远得到同一个色调（重进页面不会变色），
+ *    不同条目又大概率不同 —— 这正是「统一但不重复」的实现方式。
+ *
+ * 玻璃效果能看见的前提是卡片后面真的有东西可模糊，
+ * 所以页面底色必须换成渐变而不是纯色，否则 backdropBlur 等于白做。
+ * ================================================================== */
+
+export interface GlassTokens {
+  /** 背景模糊半径(vp)。过大会让文字边缘发糊，12~16 是实测可用区间 */
+  blurRadius: number;
+  /** 玻璃描边宽度 */
+  borderWidth: number;
+  /** 玻璃卡片圆角 */
+  cardRadius: number;
+  /** 投影模糊半径 */
+  shadowRadius: number;
+  /** 投影纵向偏移，制造「悬浮」感 */
+  shadowOffsetY: number;
+  /** 顶部高光条高度 */
+  sheenHeight: number;
+}
+
+export const glass: GlassTokens = {
+  blurRadius: 14,
+  borderWidth: 1,
+  cardRadius: 24,
+  shadowRadius: 20,
+  shadowOffsetY: 10,
+  sheenHeight: 1
+};
+
+/** 情绪色调数量，与 tone_*_veil 资源一一对应 */
+const TONE_COUNT: number = 4;
+
+/**
+ * 页面氛围底：三段渐变，135°（左上 → 右下）。
+ * 页面级 Scroll / Tabs 统一用它，替代原来的纯色背景。
+ */
+export function pageGradient(): LinearGradientOptions {
+  return {
+    angle: 135,
+    colors: [[color.pageDeep, 0], [color.pageMid, 0.58], [color.pageGlow, 1]]
+  };
+}
+
+/**
+ * 玻璃卡底色：色调 veil 从左上渗入，到右下退成纯玻璃。
+ *
+ * veil 自带 alpha（深色 0x4D / 浅色 0x38），所以它叠在页面渐变上
+ * 只是「染色」，不会盖住背后的氛围 —— 这就是玻璃感而不是实色块。
+ */
+export function glassGradient(veil: ResourceColor): LinearGradientOptions {
+  return {
+    angle: 160,
+    colors: [[veil, 0], [color.glassFill, 0.68], [color.glassFill, 1]]
+  };
+}
+
+/** 主视觉卡：饱和双色调，160°。白字压在上面对比度最稳。 */
+export function heroGradient(): LinearGradientOptions {
+  return {
+    angle: 160,
+    colors: [[color.heroA, 0], [color.heroB, 1]]
+  };
+}
+
+/** 主 CTA 按钮面：品牌色 → 按下色，配投影做出立体感 */
+export function primaryButtonGradient(): LinearGradientOptions {
+  return {
+    angle: 90,
+    colors: [[color.primary, 0], [color.primaryPressed, 1]]
+  };
+}
+
+/** 玻璃投影。offsetY 为正 = 光从上方来，卡片浮在底板之上。 */
+export function glassShadow(radiusV: number, offsetY: number): ShadowOptions {
+  return {
+    radius: radiusV,
+    color: color.glassShadow,
+    offsetX: 0,
+    offsetY: offsetY
+  };
+}
+
+/** 按钮辉光投影：比玻璃投影更紧更亮，让 CTA 在一片玻璃里先被看见 */
+export function buttonGlow(): ShadowOptions {
+  return {
+    radius: 14,
+    color: color.btnGlow,
+    offsetX: 0,
+    offsetY: 6
+  };
+}
+
+/**
+ * 字符串 → 稳定散列。
+ * 只用于挑色调，不承担任何业务语义，因此不需要密码学强度。
+ */
+export function toneHash(key: string): number {
+  let h: number = 0;
+  for (let i = 0; i < key.length; i++) {
+    h = (h * 31 + key.charCodeAt(i)) % 99991;
+  }
+  return h;
+}
+
+/**
+ * 按 key 分配情绪色调（冰蓝 / 奶黄 / 金属灰 / 暖橙）。
+ *
+ * 用分支返回而不是数组下标，和上面的 themeLabel 同一个理由：
+ * ArkTS 对索引访问的静态限制让数组下标写法不够稳，分支行为确定。
+ */
+export function toneVeil(key: string): ResourceColor {
+  const idx: number = toneHash(key) % TONE_COUNT;
+  if (idx === 0) {
+    return color.toneIceVeil;
+  }
+  if (idx === 1) {
+    return color.toneCreamVeil;
+  }
+  if (idx === 2) {
+    return color.toneSteelVeil;
+  }
+  return color.toneAmberVeil;
+}

@@ -14,7 +14,7 @@ import { FoodEditPage } from './FoodEditPage';
 import { ActivityEditPage } from './ActivityEditPage';
 import { AiRecognitionPage } from './AiRecognitionPage';
 import { AiSettingsPage } from './AiSettingsPage';
-import { color, fontSize } from '../common/DesignTokens';
+import { color, fontSize, pageGradient } from '../common/DesignTokens';
 import { todayKey } from '../common/DateUtils';
 
 @Entry
@@ -99,6 +99,7 @@ struct Index {
         .width('100%')
         .height('100%')
         .backgroundColor(color.bg)
+        .linearGradient(pageGradient())
       }
     }
     .navDestination(this.PageMap)

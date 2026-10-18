@@ -11,7 +11,10 @@ import {
   BodyProfile, Sex, ActivityLevel, GoalMode,
   activityLabel, modeLabel, sexLabel, MacroTarget
 } from '../models/Calculation';
-import { color, fontSize, space, radius, layout, ThemeMode, themeLabel } from '../common/DesignTokens';
+import {
+  color, fontSize, space, radius, layout, ThemeMode, themeLabel, pageGradient,
+  glass, glassGradient, glassShadow
+} from '../common/DesignTokens';
 import { ThemeService } from '../services/ThemeService';
 import { DATA_SOURCE_LABEL } from '../common/Constants';
 import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivityKcalGoal } from '../common/Validators';
@@ -294,7 +297,7 @@ export struct ProfilePage {
                 .textAlign(TextAlign.Center)
                 .fontSize(fontSize.body)
                 .fontColor(this.themeIndex === i ? color.onPrimary : color.textSecondary)
-                .backgroundColor(this.themeIndex === i ? color.primary : color.surfaceMuted)
+                .backgroundColor(this.themeIndex === i ? color.primary : color.glassFill)
                 .borderRadius(radius.medium)
                 .onClick(() => {
                   this.themeIndex = i;
@@ -304,15 +307,17 @@ export struct ProfilePage {
           }
           .width('100%')
 
-          Text('深色配色取自 NutriScan 真机实测像素值：底色 #0C0C0C（非纯黑），品牌色 #D5EE6E')
+          Text('V4 配色：高饱和氛围渐变打底，卡片为半透明玻璃层。品牌色 #D5EE6E 沿用 NutriScan 真机实测值')
             .fontSize(fontSize.caption)
             .fontColor(color.textHint)
             .width('100%')
         }
         .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
+        .linearGradient(glassGradient(color.glassFill))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
         .width('100%')
 
@@ -550,9 +555,11 @@ export struct ProfilePage {
             })
         }
         .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
+        .linearGradient(glassGradient(color.glassFill))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
         .width('100%')
 
@@ -643,9 +650,11 @@ export struct ProfilePage {
             })
         }
         .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
+        .linearGradient(glassGradient(color.glassFill))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
 
         // 数据来源
@@ -660,9 +669,11 @@ export struct ProfilePage {
         }
         .alignItems(HorizontalAlign.Start)
         .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
+        .linearGradient(glassGradient(color.glassFill))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
 
         // AI 设置入口
@@ -686,9 +697,11 @@ export struct ProfilePage {
             .fontColor(color.textHint)
         }
         .padding(layout.cardPadding)
-        .backgroundColor(color.surface)
-        .borderRadius(radius.card)
-        .border({ width: layout.borderWidth, color: color.border })
+        .linearGradient(glassGradient(color.glassFill))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
         .onClick(() => {
           this.navStack.pushPathByName('AiSettings', new Object());
@@ -714,5 +727,6 @@ export struct ProfilePage {
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
   }
 }

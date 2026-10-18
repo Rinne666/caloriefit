@@ -5,7 +5,7 @@
 
 import { FoodRepository } from '../repositories/FoodRepository';
 import { FoodLog, FoodLogInput } from '../models/FoodLog';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { formatNumber } from '../common/DateUtils';
 import { CalorieService } from '../services/CalorieService';
 import { AppDialogService } from '../services/AppDialogService';
@@ -505,9 +505,11 @@ export struct FoodEditPage {
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
       .backgroundColor(color.bg)
+      .linearGradient(pageGradient())
     }
     .title(this.isAiMode() ? 'AI 估算结果' : (this.mode === 'edit' ? '编辑食物' : '新增食物'))
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
     .onReady((ctx: NavDestinationContext) => {
       const p = ctx.pathInfo.param as FoodEditParams | null | undefined;
       if (p !== null && p !== undefined) {

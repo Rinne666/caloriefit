@@ -3,7 +3,7 @@
  *
  * 对应 NutriScan 首页每个指标下方的 M T W T F S S 周条。
  *
- * V3：颜色全部走 DesignTokens 的资源限定符引用，深浅色自动切换。
+ * V4：外壳换成玻璃层，色调由 'trend' 种子决定。
  *
  * 设计要点：
  *   · 固定 7 个槽位，缺数据的日子画空槽而非压缩 —— 保持星期对齐
@@ -12,9 +12,13 @@
  *   · 无数据时降低透明度而不是画 0，避免"看起来是 0 千卡"的误读
  */
 
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, layout,
+  glass, glassGradient, glassShadow, toneVeil
+} from '../common/DesignTokens';
 import { DayPoint } from '../repositories/MacroRepository';
 import { toDateKey, parseDateKey } from '../common/DateUtils';
+
 const WEEK_LABELS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 
 /** 柱区高度(vp)。底轨固定此高，数据柱按比例填充。 */
@@ -97,6 +101,11 @@ export struct WeekSparkline {
     return date === this.selectedDate;
   }
 
+  private labelFor(dateKey: string): string {
+    const d = parseDateKey(dateKey);
+    return WEEK_LABELS[(d.getDay() + 6) % 7];
+  }
+
   build() {
     Column({ space: 6 }) {
       Row() {
@@ -162,14 +171,11 @@ export struct WeekSparkline {
     }
     .width('100%')
     .padding(layout.cardPadding)
-    .backgroundColor(color.surface)
-    .borderRadius(radius.card)
-    .border({ width: layout.borderWidth, color: color.border })
+    .linearGradient(glassGradient(toneVeil('trend')))
+    .borderRadius(glass.cardRadius)
+    .border({ width: glass.borderWidth, color: color.glassBorder })
+    .backdropBlur(glass.blurRadius)
+    .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
     .alignItems(HorizontalAlign.Start)
-  }
-
-  private labelFor(dateKey: string): string {
-    const d = parseDateKey(dateKey);
-    return WEEK_LABELS[(d.getDay() + 6) % 7];
   }
 }

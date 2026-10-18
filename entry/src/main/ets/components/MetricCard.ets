@@ -1,9 +1,16 @@
 /**
  * 统计卡片：标题 + 大数字 + 单位 + 自绘线性进度条。
  * 组件不访问数据库，只接受数据。
+ *
+ * V4：外壳换成玻璃层，色调用 title 做种子 ——
+ * 于是同一行里的「步数」和「运动时长」自动是两个不同色调，
+ * 而调色板、圆角、排版完全一致，这就是「统一但不重复」。
  */
 
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, space, layout,
+  glass, glassGradient, glassShadow, toneVeil
+} from '../common/DesignTokens';
 
 @Component
 export struct MetricCard {
@@ -20,7 +27,7 @@ export struct MetricCard {
         .fontSize(fontSize.secondary)
         .fontColor(color.textSecondary)
 
-      Row({ space: space.xxs }) {
+      Row({ space: 4 }) {
         Text(this.valueText)
           .fontSize(fontSize.metric)
           .fontWeight(FontWeight.Bold)
@@ -57,9 +64,12 @@ export struct MetricCard {
       .width('100%')
     }
     .alignItems(HorizontalAlign.Start)
+    .width('100%')
     .padding(layout.cardPadding)
-    .backgroundColor(color.surface)
-    .borderRadius(radius.card)
-    .border({ width: layout.borderWidth, color: color.border })
+    .linearGradient(glassGradient(toneVeil(this.title)))
+    .borderRadius(glass.cardRadius)
+    .border({ width: glass.borderWidth, color: color.glassBorder })
+    .backdropBlur(glass.blurRadius)
+    .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
   }
 }
