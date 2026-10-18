@@ -41,6 +41,16 @@ export struct AiRecognitionPage {
   @Consume('navStack') navStack: NavPathStack;
   @State date: string = '';
   @State photoUri: string | null = null;
+  /**
+   * 预览用的图片源，与 photoUri 分开。
+   *
+   * photoUri 必须是**真实文件路径**（prepareImage 走 fileIo.open）；
+   * 而 ArkUI 的 Image 对沙箱真实路径不一定能解码 —— 实测把 cacheDir 里的
+   * 真实路径直接喂给 Image，预览区是一片空白（文件本身完好、fileIo 也能读）。
+   * rawfile 的 Resource 才是 Image 认的形式，所以：显示走 $rawfile 资源，
+   * 读取走缓存副本，两条通道各司其职。
+   */
+  @State private previewSrc: ResourceStr = '';
   @State result: AiRecognitionResult | null = null;
   @State errorMessage: string = '';
   @State hasError: boolean = false;
@@ -77,6 +87,7 @@ export struct AiRecognitionPage {
       fileIo.writeSync(f.fd, bytes.buffer);
       fileIo.closeSync(f);
       this.photoUri = dst;
+      this.previewSrc = $rawfile(SAMPLE_RAW_FILE);
       this.result = null;
       this.hasError = false;
       this.errorMessage = '';
@@ -100,6 +111,7 @@ export struct AiRecognitionPage {
         return;
       }
       this.photoUri = uri;
+      this.previewSrc = uri;
       this.result = null;
       this.hasError = false;
       this.errorMessage = '';
@@ -122,6 +134,7 @@ export struct AiRecognitionPage {
         return;
       }
       this.photoUri = uri;
+      this.previewSrc = uri;
       this.result = null;
       this.hasError = false;
       this.errorMessage = '';
@@ -304,7 +317,7 @@ export struct AiRecognitionPage {
             .borderRadius(16)
           } else {
             Column() {
-              Image(this.photoUri)
+              Image(this.previewSrc)
                 .width('100%')
                 .height(180)
                 .objectFit(ImageFit.Cover)
