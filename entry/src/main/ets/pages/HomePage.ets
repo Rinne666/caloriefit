@@ -4,8 +4,10 @@
  */
 
 import { DailySummaryService } from '../services/DailySummaryService';
+import { anim } from '../common/Motion';
 import { DailySummary } from '../models/DailySummary';
 import { CalorieRing } from '../components/CalorieRing';
+import { AnimatedNumber } from '../components/AnimatedNumber';
 import { MetricCard } from '../components/MetricCard';
 import { MacroPanel } from '../components/MacroBar';
 import { WeekSparkline } from '../components/WeekSparkline';
@@ -25,6 +27,13 @@ export struct HomePage {
   @Consume('navStack') navStack: NavPathStack;
   @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
   @StorageLink('selectedDate') @Watch('reload') selectedDate: string = '';
+  /** 页面内容入场开关，见 build() 末尾的 opacity/translate */
+  @State private entered: boolean = false;
+
+  enterPage(): void {
+    this.entered = true;
+  }
+
   @State summary: DailySummary | null = null;
   /** 当日宏量实际摄入 + 是否真的录过宏量（区分"没吃"与"吃了没记"） */
   @State macroDay: MacroDayTotal | null = null;
@@ -143,10 +152,11 @@ export struct HomePage {
 
           Row() {
             Column({ space: 4 }) {
-              Text(formatNumber(this.summary !== null ? this.summary.consumedKcal : 0))
-                .fontSize(fontSize.metric)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#FFFFFF')
+              AnimatedNumber({
+                target: this.summary !== null ? this.summary.consumedKcal : 0,
+                textSize: fontSize.metric,
+                textColor: '#FFFFFF'
+              })
               Text('已摄入 kcal')
                 .fontSize(fontSize.caption)
                 .fontColor('#B3FFFFFF')
@@ -155,10 +165,11 @@ export struct HomePage {
             .layoutWeight(1)
 
             Column({ space: 4 }) {
-              Text(formatNumber(this.summary !== null ? this.summary.burnedKcal : 0))
-                .fontSize(fontSize.metric)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#FFFFFF')
+              AnimatedNumber({
+                target: this.summary !== null ? this.summary.burnedKcal : 0,
+                textSize: fontSize.metric,
+                textColor: '#FFFFFF'
+              })
               Text('活动消耗 kcal')
                 .fontSize(fontSize.caption)
                 .fontColor('#B3FFFFFF')
@@ -167,10 +178,11 @@ export struct HomePage {
             .layoutWeight(1)
 
             Column({ space: 4 }) {
-              Text(formatNumber(this.summary !== null ? this.summary.dailyCalorieBudget : 1800))
-                .fontSize(fontSize.metric)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#FFFFFF')
+              AnimatedNumber({
+                target: this.summary !== null ? this.summary.dailyCalorieBudget : 1800,
+                textSize: fontSize.metric,
+                textColor: '#FFFFFF'
+              })
               Text('饮食预算 kcal')
                 .fontSize(fontSize.caption)
                 .fontColor('#B3FFFFFF')
@@ -299,6 +311,14 @@ export struct HomePage {
       }
       .padding(layout.pagePadding)
       .constraintSize({ minHeight: '100%' })
+      // 入场：300ms Fade + Slide，对齐 NutriScan 实测的 easeOut 转场。
+      // 首帧 entered=false（透明 + 下移），onAppear 后翻 true 触发隐式动画。
+      .opacity(this.entered ? 1 : 0)
+      .translate({ x: 0, y: this.entered ? 0 : anim.enterShiftVp })
+      .animation({ duration: anim.enterMs, curve: anim.ease })
+      .onAppear(() => {
+        this.enterPage();
+      })
     }
     .width('100%')
     .height('100%')

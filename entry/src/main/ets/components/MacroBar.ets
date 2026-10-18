@@ -17,6 +17,7 @@ import {
   color, fontSize, space, layout,
   glass, glassGradient, glassShadow, toneVeil
 } from '../common/DesignTokens';
+import { anim } from '../common/Motion';
 import { CalorieEngine } from '../services/CalorieEngine';
 
 @Component
@@ -60,6 +61,19 @@ export struct MacroBar {
     return this.isOver() ? color.danger : color.text;
   }
 
+  /**
+   * 填充开关。首帧 false（宽度 0），出现后翻 true，由 .animation()
+   * 把宽度和刻度位置一起推上去。不能在 aboutToAppear 置 true ——
+   * 那会儿 build 还没跑，隐式动画拿不到初值，会变成直接跳到终值。
+   *
+   * 方法名避开 onAppear：那是 CustomComponent 已有的属性。
+   */
+  @State private filled: boolean = false;
+
+  startFill(): void {
+    this.filled = true;
+  }
+
   build() {
     Column({ space: 6 }) {
       Row() {
@@ -87,17 +101,19 @@ export struct MacroBar {
           .backgroundColor(color.ringTrack)
 
         Row()
-          .width(`${this.ratio() * 100}%`)
+          .width(this.filled ? `${this.ratio() * 100}%` : '0%')
           .height(layout.progressHeight)
           .borderRadius(layout.progressHeight / 2)
           .backgroundColor(this.fillColor())
+          .animation({ duration: anim.dataMs, curve: anim.easeData })
 
         // 目标刻度竖线
         Row()
           .width(2)
           .height(layout.progressHeight + 4)
           .backgroundColor(color.textHint)
-          .margin({ left: this.markerPos() })
+          .margin({ left: this.filled ? this.markerPos() : '0%' })
+          .animation({ duration: anim.dataMs, curve: anim.easeData })
       }
       .width('100%')
       .height(layout.progressHeight + 4)
@@ -110,6 +126,9 @@ export struct MacroBar {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
+    .onAppear(() => {
+      this.startFill();
+    })
   }
 }
 

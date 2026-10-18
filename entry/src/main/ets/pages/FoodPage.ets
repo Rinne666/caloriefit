@@ -3,6 +3,7 @@
  */
 
 import { FoodRepository } from '../repositories/FoodRepository';
+import { anim } from '../common/Motion';
 import { SettingsRepository } from '../repositories/SettingsRepository';
 import { FoodLog } from '../models/FoodLog';
 import { AppSettings } from '../models/AppSettings';
@@ -19,6 +20,31 @@ export struct FoodPage {
   @Consume('navStack') navStack: NavPathStack;
   @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
   @StorageLink('selectedDate') @Watch('reload') selectedDate: string = '';
+  /** 页面内容入场开关，见 build() 末尾的 opacity/translate */
+  @State private entered: boolean = false;
+
+  /**
+   * 当前被按住的记录 id，-1 表示没按。
+   *
+   * 为什么用 id 而不是布尔量：FoodRow 是本组件内的 @Builder，
+   * 所有行共用同一个 this，一个布尔量会让「按一行、所有行一起缩」。
+   * 同组件内的 @Builder 用 this 是安全的 —— 出问题的是跨组件的
+   * @BuilderParam 插槽（实测会把 this 绑到宿主组件上）。
+   */
+  @State private pressedFoodId: number = -1;
+
+  enterPage(): void {
+    this.entered = true;
+  }
+
+  private touchFood(id: number, e: TouchEvent): void {
+    if (e.type === TouchType.Down) {
+      this.pressedFoodId = id;
+    } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+      this.pressedFoodId = -1;
+    }
+  }
+
   @State foods: FoodLog[] = [];
   @State budget: number = 1800;
 
@@ -180,6 +206,16 @@ export struct FoodPage {
     .linearGradient({ angle: 135, colors: [[toneVeil(log.name), 0], [color.glassFill, 1]] })
     .borderRadius(radius.medium)
     .border({ width: 1, color: color.glassBorder })
+    // 按压反馈：轻微缩放。幅度刻意压到 0.965 ——
+    // 再大就变成"卡片在躲"，再小又感觉不到被点到。
+    .scale({
+      x: this.pressedFoodId === log.id ? anim.pressScale : 1,
+      y: this.pressedFoodId === log.id ? anim.pressScale : 1
+    })
+    .animation({ duration: anim.pressMs, curve: anim.ease })
+    .onTouch((e: TouchEvent) => {
+      this.touchFood(log.id, e);
+    })
     .onClick(() => {
       this.goEdit(log);
     })
@@ -341,6 +377,14 @@ export struct FoodPage {
       }
       .padding(layout.pagePadding)
       .constraintSize({ minHeight: '100%' })
+      // 入场：300ms Fade + Slide，对齐 NutriScan 实测的 easeOut 转场。
+      // 首帧 entered=false（透明 + 下移），onAppear 后翻 true 触发隐式动画。
+      .opacity(this.entered ? 1 : 0)
+      .translate({ x: 0, y: this.entered ? 0 : anim.enterShiftVp })
+      .animation({ duration: anim.enterMs, curve: anim.ease })
+      .onAppear(() => {
+        this.enterPage();
+      })
     }
     .width('100%')
     .height('100%')

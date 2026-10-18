@@ -3,7 +3,9 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { SettingsRepository } from '../repositories/SettingsRepository';import { ProfileRepository } from '../repositories/ProfileRepository';
+import { anim } from '../common/Motion';
+import { SettingsRepository } from '../repositories/SettingsRepository';
+import { ProfileRepository } from '../repositories/ProfileRepository';
 import { Database } from '../database/Database';
 import { AppSettings } from '../models/AppSettings';
 import { CalorieEngine } from '../services/CalorieEngine';
@@ -23,6 +25,13 @@ import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivit
 export struct ProfilePage {
   @StorageLink('refreshTick') refreshTick: number = 0;
   @Consume('navStack') navStack: NavPathStack;
+  /** 页面内容入场开关，见 build() 末尾的 opacity/translate */
+  @State private entered: boolean = false;
+
+  enterPage(): void {
+    this.entered = true;
+  }
+
   @State budgetInput: string = '1800';
   @State stepsGoalInput: string = '8000';
   @State minutesGoalInput: string = '30';
@@ -721,6 +730,14 @@ export struct ProfilePage {
       }
       .padding(layout.pagePadding)
       .constraintSize({ minHeight: '100%' })
+      // 入场：300ms Fade + Slide，对齐 NutriScan 实测的 easeOut 转场。
+      // 首帧 entered=false（透明 + 下移），onAppear 后翻 true 触发隐式动画。
+      .opacity(this.entered ? 1 : 0)
+      .translate({ x: 0, y: this.entered ? 0 : anim.enterShiftVp })
+      .animation({ duration: anim.enterMs, curve: anim.ease })
+      .onAppear(() => {
+        this.enterPage();
+      })
     }
     .width('100%')
     .height('100%')

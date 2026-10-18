@@ -65,6 +65,8 @@ export interface ColorTokens {
   /** V4 主视觉饱和双色调 */
   heroA: ResourceColor;
   heroB: ResourceColor;
+  /** 主视觉卡上的进度环轨道；两套主题同值（主视觉恒为深色饱和底） */
+  heroRingTrack: ResourceColor;
 
   /** V4 卡片情绪色调 veil（冰蓝 / 奶黄 / 金属灰 / 暖橙） */
   toneIceVeil: ResourceColor;
@@ -122,6 +124,7 @@ export const color: ColorTokens = {
 
   heroA: $r('app.color.hero_a'),
   heroB: $r('app.color.hero_b'),
+  heroRingTrack: $r('app.color.hero_ring_track'),
 
   toneIceVeil: $r('app.color.tone_ice_veil'),
   toneCreamVeil: $r('app.color.tone_cream_veil'),

@@ -16,6 +16,7 @@ import {
   color, fontSize, layout,
   glass, glassGradient, glassShadow, toneVeil
 } from '../common/DesignTokens';
+import { anim } from '../common/Motion';
 import { DayPoint } from '../repositories/MacroRepository';
 import { toDateKey, parseDateKey } from '../common/DateUtils';
 
@@ -30,6 +31,20 @@ export struct WeekSparkline {
   @Prop points: DayPoint[] = [];
   @Prop targetKcal: number = 1800;
   @Prop selectedDate: string = '';
+
+  /**
+   * 柱子生长开关。
+   *
+   * 首次渲染为 false（高度 0），出现后翻 true，
+   * 由 .animation() 的隐式动画把高度推上去 —— 逐根 delay 形成波浪感。
+   * 不能在 aboutToAppear 里就置 true：那会儿 build 还没跑，动画没有初值。
+   * 方法名避开 onAppear：那是 CustomComponent 上已存在的属性。
+   */
+  @State private grown: boolean = false;
+
+  growBars(): void {
+    this.grown = true;
+  }
 
   /**
    * 柱区最大刻度。
@@ -124,7 +139,7 @@ export struct WeekSparkline {
 
       Stack({ alignContent: Alignment.BottomStart }) {
         Row() {
-          ForEach(this.weekSlots(), (p: DayPoint) => {
+          ForEach(this.weekSlots(), (p: DayPoint, i: number) => {
             Column({ space: 4 }) {
               // 每槽都画底轨：空数据日也能看出「这里有一天但没记录」，
               // 而不是一个 3px 的残桩（v1 首版就是这么做的，看起来像坏了）
@@ -140,9 +155,14 @@ export struct WeekSparkline {
                 // 而 barHeight 已经算对了 —— 去掉条件后恢复正常。
                 Row()
                   .width(18)
-                  .height(this.barHeight(p.kcal))
+                  .height(this.grown ? this.barHeight(p.kcal) : 0)
                   .borderRadius(6)
                   .backgroundColor(this.isOverTarget(p.kcal) ? color.danger : color.primary)
+                  .animation({
+                    duration: anim.dataMs,
+                    delay: i * anim.barStaggerMs,
+                    curve: anim.easeData
+                  })
               }
               .width(18)
               .height(BAR_AREA)
@@ -177,5 +197,8 @@ export struct WeekSparkline {
     .backdropBlur(glass.blurRadius)
     .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
     .alignItems(HorizontalAlign.Start)
+    .onAppear(() => {
+      this.growBars();
+    })
   }
 }

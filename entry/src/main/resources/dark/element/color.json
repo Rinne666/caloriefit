@@ -47,6 +47,7 @@
 
     { "name": "hero_a", "value": "#2E74E8" },
     { "name": "hero_b", "value": "#5A1FB8" },
+    { "name": "hero_ring_track", "value": "#33FFFFFF" },
 
     { "name": "tone_ice_veil", "value": "#4D3D6FD8" },
     { "name": "tone_cream_veil", "value": "#4DC9A03A" },
