@@ -12,8 +12,11 @@ import { MetricCard } from '../components/MetricCard';
 import { MacroPanel } from '../components/MacroBar';
 import { WeekSparkline } from '../components/WeekSparkline';
 import { MacroRepository, MacroDayTotal, DayPoint } from '../repositories/MacroRepository';
+import { FoodRepository } from '../repositories/FoodRepository';
+import { FoodLog } from '../models/FoodLog';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { MacroTarget } from '../models/Calculation';
+import { MEAL_LABELS } from '../common/Constants';
 import {
   color, fontSize, space, radius, layout,
   glass, glassGradient, glassShadow, buttonGlow, toneVeil,
@@ -41,6 +44,8 @@ export struct HomePage {
   @State macroTarget: MacroTarget | null = null;
   /** 近 7 日趋势 */
   @State trend: DayPoint[] = [];
+  /** 当日餐食记录，供餐食卡片流使用 */
+  @State foods: FoodLog[] = [];
 
   aboutToAppear(): void {
     this.reload();
@@ -78,6 +83,46 @@ export struct HomePage {
     } catch (e) {
       this.trend = [];
     }
+    try {
+      this.foods = await FoodRepository.getByDate(this.selectedDate);
+    } catch (e) {
+      this.foods = [];
+    }
+  }
+
+  /* ---------------- 餐食卡片流（对应原版「餐食卡片 → 餐食详情」） ---------------- */
+
+  private mealItems(mealType: number): FoodLog[] {
+    const out: FoodLog[] = [];
+    for (let i = 0; i < this.foods.length; i++) {
+      if (this.foods[i].mealType === mealType) {
+        out.push(this.foods[i]);
+      }
+    }
+    return out;
+  }
+
+  private mealKcal(mealType: number): number {
+    const list = this.mealItems(mealType);
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) {
+      sum += list[i].calories;
+    }
+    return sum;
+  }
+
+  private goMealDetail(mealType: number): void {
+    this.navStack.pushPathByName('MealDetail',
+      new MealDetailParams(this.selectedDate, mealType));
+  }
+
+  /** 轮播条文案。实测原版轮播指向 change_language / auto_logging 两个设置子页。 */
+  private tips(): string[] {
+    return [
+      '💡 拍照识别只要 3 秒，不用手动称重',
+      '🎯 每餐先看蛋白，缺口用一杯酸奶补',
+      '💧 训练后 30 分钟内补水效果最好'
+    ];
   }
 
   /** 本周一（周一为一周之首，与 WeekSparkline 的槽位对齐） */
@@ -198,6 +243,67 @@ export struct HomePage {
         .border({ width: glass.borderWidth, color: color.glassBorder })
         .shadow(glassShadow(glass.shadowRadius + 6, glass.shadowOffsetY + 4))
         .alignItems(HorizontalAlign.Center)
+        .width('100%')
+
+        // 轮播条 —— 对应原版 Home 的横向提示轮播
+        Scroll() {
+          Row({ space: space.sm }) {
+            ForEach(this.tips(), (tip: string) => {
+              Text(tip)
+                .fontSize(fontSize.secondary)
+                .fontColor(color.text)
+                .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+                .backgroundColor(color.glassFill)
+                .borderRadius(radius.pill)
+                .border({ width: 1, color: color.glassBorder })
+            }, (tip: string) => tip)
+          }
+        }
+        .width('100%')
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .margin({ bottom: space.xs })
+
+        // 餐食卡片流 —— 对应原版「餐食卡片 ──> 餐食详情」
+        Column({ space: space.sm }) {
+          Text('今日餐食')
+            .fontSize(fontSize.sectionTitle)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(color.text)
+            .width('100%')
+
+          ForEach(MEAL_LABELS, (label: string, index: number) => {
+            Row() {
+              Column({ space: 2 }) {
+                Text(label)
+                  .fontSize(fontSize.body)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(color.text)
+                Text(this.mealItems(index).length === 0
+                  ? '还没记录'
+                  : `${this.mealItems(index).length} 项 · ${formatNumber(this.mealKcal(index))} kcal`)
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+
+              Text(this.mealItems(index).length === 0 ? '＋' : '›')
+                .fontSize(fontSize.sectionTitle)
+                .fontColor(color.textHint)
+            }
+            .width('100%')
+            .padding(layout.cardPadding)
+            .linearGradient(glassGradient(toneVeil(label)))
+            .borderRadius(glass.cardRadius)
+            .border({ width: glass.borderWidth, color: color.glassBorder })
+            .backdropBlur(glass.blurRadius)
+            .alignItems(VerticalAlign.Center)
+            .onClick(() => {
+              this.goMealDetail(index);
+            })
+          }, (label: string, index: number) => label + index)
+        }
         .width('100%')
 
         // 步数与运动时长
@@ -339,6 +445,17 @@ export class FoodEditParams {
     this.mode = mode;
     this.date = date;
     this.id = id;
+  }
+}
+
+/** 餐食详情路由参数，与 MealDetailPage 内部同名类结构一致 */
+export class MealDetailParams {
+  date: string = '';
+  mealType: number = 0;
+
+  constructor(date: string, mealType: number) {
+    this.date = date;
+    this.mealType = mealType;
   }
 }
 

@@ -25,6 +25,7 @@ import { ProfilePage } from './ProfilePage';
 import { FoodPage } from './FoodPage';
 import { ActivityPage } from './ActivityPage';
 import { FoodEditPage } from './FoodEditPage';
+import { MealDetailPage } from './MealDetailPage';
 import { ActivityEditPage } from './ActivityEditPage';
 import { AiRecognitionPage } from './AiRecognitionPage';
 import { AiSettingsPage } from './AiSettingsPage';
@@ -84,6 +85,9 @@ struct Index {
       FoodEditPage()
     } else if (name === 'ActivityEdit') {
       ActivityEditPage()
+    } else if (name === 'MealDetail') {
+      // 餐食详情：根节点是 NavDestination，Navigation 才有东西可挂载
+      MealDetailPage()
     } else if (name === 'AiRecognition') {
       AiRecognitionPage()
     } else if (name === 'AiSettings') {
