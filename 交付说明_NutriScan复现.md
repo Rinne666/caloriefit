@@ -185,6 +185,15 @@ API 23 起报 `The V1 decorator '@Prop' cannot be applied to a Function-type var
 改动都是纯新增或局部包裹，不改既有渲染路径，风险集中在新页面自身布局。
 以上是推断，不是证据 —— 模拟器恢复后需逐条实跑。
 
+### 一键补验
+
+```powershell
+python -u _tools\verify_all.py
+```
+
+脚本会依次检查上表 8 项（安装 → 逐屏按文本定位点击 → 截图 → 输出 PASS/FAIL 汇总）。
+桥接不可用时直接退出并提示，**不会假装跑过**。截图落在 `_tools/shots/`。
+
 ---
 
 ## 9. 快速开始
