@@ -62,9 +62,10 @@ async function addColumnsIfMissing(
       await store.executeSql(alters[i]);
       existing.push(col);
     } catch (e) {
+      // ArkTS 不允许 throw 任意类型（arkts-limited-throw）
       hilog.error(DOMAIN, TAG,
         'V3: ALTER failed on %{public}s.%{public}s', table, col);
-      throw e;
+      throw new Error(`V3 migration failed on ${table}.${col}: ${e}`);
     }
   }
 }

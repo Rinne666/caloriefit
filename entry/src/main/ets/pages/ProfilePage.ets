@@ -9,9 +9,9 @@ import { AppSettings } from '../models/AppSettings';
 import { CalorieEngine } from '../services/CalorieEngine';
 import {
   BodyProfile, Sex, ActivityLevel, GoalMode,
-  ACTIVITY_LABELS, MODE_LABELS, SEX_LABELS, MacroTarget
+  activityLabel, modeLabel, sexLabel, MacroTarget
 } from '../models/Calculation';
-import { color, fontSize, space, radius, layout, ThemeMode, THEME_LABELS } from '../common/DesignTokens';
+import { color, fontSize, space, radius, layout, ThemeMode, themeLabel } from '../common/DesignTokens';
 import { ThemeService } from '../services/ThemeService';
 import { DATA_SOURCE_LABEL } from '../common/Constants';
 import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivityKcalGoal } from '../common/Validators';
@@ -78,7 +78,7 @@ export struct ProfilePage {
     }
     const ok = await ThemeService.apply(ctx as common.UIAbilityContext, mode);
     this.getUIContext().getPromptAction().showToast({
-      message: ok ? `外观已切换为${THEME_LABELS[mode]}` : '切换失败，请重试'
+      message: ok ? `外观已切换为${themeLabel(mode)}` : '切换失败，请重试'
     });
   }
 
@@ -288,7 +288,7 @@ export struct ProfilePage {
 
           Row({ space: space.sm }) {
             ForEach(ProfilePage.THEME_ORDER, (m: ThemeMode, i: number) => {
-              Text(THEME_LABELS[m])
+              Text(themeLabel(m))
                 .layoutWeight(1)
                 .height(40)
                 .textAlign(TextAlign.Center)
@@ -390,13 +390,12 @@ export struct ProfilePage {
               Text('体脂率 %（可空）')
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
-              TextInput({ text: this.bodyFatInput })
+              TextInput({ text: this.bodyFatInput, placeholder: '未知' })
                 .type(InputType.Number)
                 .height(layout.inputHeight)
                 .fontSize(fontSize.body)
                 .backgroundColor(color.surfaceMuted)
                 .borderRadius(radius.medium)
-                .placeholder('未知')
                 .onChange((v: string) => {
                   this.bodyFatInput = v;
                   this.recalcPreview();
@@ -413,7 +412,7 @@ export struct ProfilePage {
               .fontColor(color.textSecondary)
             Row({ space: space.sm }) {
               ForEach(ProfilePage.SEX_ORDER, (s: Sex, i: number) => {
-                Text(SEX_LABELS[s])
+                Text(sexLabel(s))
                   .layoutWeight(1)
                   .height(40)
                   .textAlign(TextAlign.Center)
@@ -440,12 +439,12 @@ export struct ProfilePage {
               ForEach(ProfilePage.ACTIVITY_ORDER, (a: ActivityLevel, i: number) => {
                 Row({ space: space.sm }) {
                   Radio({ value: a, group: 'act' })
-                    .selected(this.activityIndex === i)
+                    .checked(this.activityIndex === i)
                     .onChange(() => {
                       this.activityIndex = i;
                       this.recalcPreview();
                     })
-                  Text(ACTIVITY_LABELS[a])
+                  Text(activityLabel(a))
                     .fontSize(fontSize.body)
                     .fontColor(this.activityIndex === i ? color.text : color.textSecondary)
                 }
@@ -468,7 +467,7 @@ export struct ProfilePage {
               .fontColor(color.textSecondary)
             Row({ space: space.xs }) {
               ForEach(ProfilePage.GOAL_ORDER, (g: GoalMode, i: number) => {
-                Text(MODE_LABELS[g])
+                Text(modeLabel(g))
                   .layoutWeight(1)
                   .height(36)
                   .textAlign(TextAlign.Center)

@@ -65,6 +65,7 @@ export struct MacroBar {
       .alignItems(VerticalAlign.Center)
 
       // 进度轨道 + 目标刻度
+      // ArkTS: Stack 只认 alignContent，没有 alignItems
       Stack({ alignContent: Alignment.Start }) {
         Row()
           .width('100%')
@@ -87,7 +88,6 @@ export struct MacroBar {
       }
       .width('100%')
       .height(layout.progressHeight + 4)
-      .alignItems(VerticalAlign.Center)
 
       if (this.isOver) {
         Text(`超出 ${Math.round(this.actualG - this.targetG)}g`)

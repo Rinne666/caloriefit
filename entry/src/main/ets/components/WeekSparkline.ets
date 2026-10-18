@@ -18,6 +18,9 @@ import { toDateKey, parseDateKey } from '../common/DateUtils';
 
 const WEEK_LABELS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 
+/** 柱区高度(vp)。底轨固定此高，数据柱按比例填充。 */
+const BAR_AREA: number = 56;
+
 @Component
 export struct WeekSparkline {
   /** 近 N 日序列（升序，长度 <= 7，从旧到新） */
@@ -60,8 +63,11 @@ export struct WeekSparkline {
   }
 
   private barHeight(kcal: number): number {
+    if (kcal <= 0) {
+      return 0;
+    }
     const ratio = kcal / this.maxKcal;
-    return Math.max(3, Math.round(ratio * 52));
+    return Math.max(4, Math.round(ratio * BAR_AREA));
   }
 
   private isOverTarget(kcal: number): boolean {
@@ -92,13 +98,25 @@ export struct WeekSparkline {
         Row() {
           ForEach(this.weekSlots(), (p: DayPoint) => {
             Column({ space: 4 }) {
-              // 柱体
-              Row()
-                .width(18)
-                .height(this.barHeight(p.kcal))
-                .borderRadius(6)
-                .backgroundColor(this.isOverTarget(p.kcal) ? color.danger : color.primary)
-                .opacity(p.kcal > 0 ? 1 : 0.25)
+              // 每槽都画底轨：空数据日也能看出「这里有一天但没记录」，
+              // 而不是一个 3px 的残桩（v1 首版就是这么做的，看起来像坏了）
+              Stack({ alignContent: Alignment.BottomStart }) {
+                Row()
+                  .width(18)
+                  .height(BAR_AREA)
+                  .borderRadius(6)
+                  .backgroundColor(color.ringTrack)
+
+                if (p.kcal > 0) {
+                  Row()
+                    .width(18)
+                    .height(this.barHeight(p.kcal))
+                    .borderRadius(6)
+                    .backgroundColor(this.isOverTarget(p.kcal) ? color.danger : color.primary)
+                }
+              }
+              .width(18)
+              .height(BAR_AREA)
 
               // 星期
               Text(this.labelFor(p.date))
@@ -113,14 +131,14 @@ export struct WeekSparkline {
         .width('100%')
         .alignItems(VerticalAlign.Bottom)
 
-        // 目标线
+        // 目标线：横贯，位置 = 目标占最大值的比例
         Divider()
           .strokeWidth(1)
           .color(color.divider)
           .margin({ bottom: this.barHeight(this.targetKcal) })
       }
       .width('100%')
-      .height(78)
+      .height(BAR_AREA + 20)
     }
     .width('100%')
     .padding(layout.cardPadding)

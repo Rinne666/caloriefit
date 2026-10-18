@@ -69,6 +69,12 @@ export const MODE_ADJUSTMENT: Record<GoalMode, number> = {
 export const MACRO_SPLIT_BASE: MacroSplit = { protein: 0.319, carbs: 0.307, fat: 0.374 };
 export const MACRO_SPLIT_CUT: MacroSplit = { protein: 0.350, carbs: 0.300, fat: 0.350 };
 
+/** BMR 计算结果 */
+export interface BmrResult {
+  value: number;
+  formula: string;
+}
+
 export interface MacroSplit {
   protein: number;
   carbs: number;
@@ -114,7 +120,7 @@ export class CalorieEngine {
    *   女: 10×体重 + 6.25×身高 − 5×年龄 − 161
    */
   static bmr(weightKg: number, heightCm: number, ageYears: number,
-    sex: Sex, bodyFatRatio: number | null): { value: number, formula: string } {
+    sex: Sex, bodyFatRatio: number | null): BmrResult {
     if (bodyFatRatio !== null && bodyFatRatio > 0 && bodyFatRatio < 0.7) {
       const lbm = weightKg * (1 - bodyFatRatio);
       return { value: 370 + 21.6 * lbm, formula: 'Katch-McArdle' };
@@ -156,7 +162,7 @@ export class CalorieEngine {
   }
 
   /** Atwater 回算 —— 展示的 Total 应与此一致 */
-  static caloriesFromMacros(m: { proteinG: number, carbsG: number, fatG: number }): number {
+  static caloriesFromMacros(m: MacroTarget): number {
     return Math.round(
       m.proteinG * ATWATER_PROTEIN +
       m.carbsG * ATWATER_CARB +

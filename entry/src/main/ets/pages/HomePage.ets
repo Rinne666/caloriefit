@@ -48,17 +48,22 @@ export struct HomePage {
   }
 
   private async loadMacro(): Promise<void> {
+    // ArkTS 禁止 Promise.all 的解构声明（arkts-no-destruct-decls），
+    // 这里顺序 await。三次都是本地 SQLite 查询，代价可忽略。
     try {
-      const [day, target, pts] = await Promise.all([
-        MacroRepository.getDayTotal(this.selectedDate),
-        ProfileRepository.getMacroTarget(),
-        MacroRepository.getTrend(this.weekStart(), this.selectedDate)
-      ]);
-      this.macroDay = day;
-      this.macroTarget = target;
-      this.trend = pts;
+      this.macroDay = await MacroRepository.getDayTotal(this.selectedDate);
     } catch (e) {
-      // 宏量为增强能力，失败不影响主流程
+      this.macroDay = null;
+    }
+    try {
+      this.macroTarget = await ProfileRepository.getMacroTarget();
+    } catch (e) {
+      this.macroTarget = null;
+    }
+    try {
+      this.trend = await MacroRepository.getTrend(this.weekStart(), this.selectedDate);
+    } catch (e) {
+      this.trend = [];
     }
   }
 

@@ -95,24 +95,28 @@ export class BodyProfile {
   }
 }
 
-/** 中文标签 —— 供 UI 直接使用 */
-export const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
-  [ActivityLevel.SEDENTARY]: '久坐',
-  [ActivityLevel.LIGHT]: '轻度活动',
-  [ActivityLevel.MODERATE]: '中度活动',
-  [ActivityLevel.VERY_ACTIVE]: '高强度',
-  [ActivityLevel.ATHLETE]: '运动员 / 重体力'
-};
+/**
+ * 中文标签 —— 用函数而非 Record<K,V> 查表。
+ *
+ * ArkTS 不允许对字段做索引访问（arkts-no-props-by-index），
+ * THEME_LABELS[a] 这类写法会直接编译失败，必须走函数调用。
+ */
+export function activityLabel(a: ActivityLevel): string {
+  if (a === ActivityLevel.SEDENTARY) { return '久坐'; }
+  if (a === ActivityLevel.LIGHT) { return '轻度活动'; }
+  if (a === ActivityLevel.VERY_ACTIVE) { return '高强度'; }
+  if (a === ActivityLevel.ATHLETE) { return '运动员 / 重体力'; }
+  return '中度活动';
+}
 
-export const MODE_LABELS: Record<GoalMode, string> = {
-  [GoalMode.WEIGHT_LOSS]: '减重',
-  [GoalMode.DEFICIT]: '控卡',
-  [GoalMode.MAINTAIN]: '维持',
-  [GoalMode.RECOMP]: '增肌减脂',
-  [GoalMode.SURPLUS]: '增重'
-};
+export function modeLabel(g: GoalMode): string {
+  if (g === GoalMode.MAINTAIN) { return '维持'; }
+  if (g === GoalMode.SURPLUS) { return '增重'; }
+  if (g === GoalMode.DEFICIT) { return '控卡'; }
+  if (g === GoalMode.RECOMP) { return '增肌减脂'; }
+  return '减重';
+}
 
-export const SEX_LABELS: Record<Sex, string> = {
-  [Sex.MALE]: '男',
-  [Sex.FEMALE]: '女'
-};
+export function sexLabel(s: Sex): string {
+  return s === Sex.MALE ? '男' : '女';
+}

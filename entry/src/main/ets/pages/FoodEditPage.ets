@@ -20,6 +20,32 @@ class FoodEditParams {
   calories: number = 0;
   aiConfidence: number = 0;
   aiNotes: string = '';
+  /** V3：AI 模式透传的宏量估算（克）。手动模式为 null。 */
+  proteinG: number | null = null;
+  carbsG: number | null = null;
+  fatG: number | null = null;
+}
+
+/**
+ * 宏量输入读取结果。
+ * ArkTS 要求对象字面量对应显式声明的 interface，
+ * 不能用内联对象类型（arkts-no-obj-literals-as-types）。
+ */
+class MacroInputResult {
+  ok: boolean = false;
+  proteinG: number | null = null;
+  carbsG: number | null = null;
+  fatG: number | null = null;
+  message: string = '';
+
+  constructor(ok: boolean, proteinG: number | null, carbsG: number | null,
+    fatG: number | null, message: string) {
+    this.ok = ok;
+    this.proteinG = proteinG;
+    this.carbsG = carbsG;
+    this.fatG = fatG;
+    this.message = message;
+  }
 }
 
 @Component
@@ -97,36 +123,42 @@ export struct FoodEditPage {
    * 读取宏量输入。三项要么全空（不记录），要么全为 0-999 的整数。
    * 部分填写视为录入不完整，返回 null 交由调用方提示，避免写入半套数据。
    */
-  private readMacros(): { ok: boolean, p: number | null, c: number | null, f: number | null,
-    message: string } {
-    const texts = [this.proteinInput.trim(), this.carbsInput.trim(), this.fatInput.trim()];
-    const filled = texts.filter((t: string) => t.length > 0).length;
+  private readMacros(): MacroInputResult {
+    const texts: string[] = [this.proteinInput.trim(), this.carbsInput.trim(),
+      this.fatInput.trim()];
+    let filled = 0;
+    for (let i = 0; i < texts.length; i++) {
+      if (texts[i].length > 0) {
+        filled++;
+      }
+    }
     if (filled === 0) {
-      return { ok: true, p: null, c: null, f: null, message: '' };
+      return new MacroInputResult(true, null, null, null, '');
     }
     if (filled < 3) {
-      return { ok: false, p: null, c: null, f: null,
-        message: '请把蛋白质、碳水、脂肪三项都填上，或三项都留空' };
+      return new MacroInputResult(false, null, null, null,
+        '请把蛋白质、碳水、脂肪三项都填上，或三项都留空');
     }
     const vals: number[] = [];
     for (let i = 0; i < 3; i++) {
       const v = parseFloat(texts[i]);
       if (isNaN(v) || !Number.isInteger(v) || v < 0 || v > 999) {
-        return { ok: false, p: null, c: null, f: null,
-          message: '宏量需为 0-999 的整数（克）' };
+        return new MacroInputResult(false, null, null, null,
+          '宏量需为 0-999 的整数（克）');
       }
       vals.push(v);
     }
-    return { ok: true, p: vals[0], c: vals[1], f: vals[2], message: '' };
+    return new MacroInputResult(true, vals[0], vals[1], vals[2], '');
   }
 
   /** 宏量按 Atwater 回算的热量，用于与总热量做一致性提示 */
   private macroPreviewKcal(): number | null {
     const m = this.readMacros();
-    if (!m.ok || m.p === null) {
+    if (!m.ok || m.proteinG === null) {
       return null;
     }
-    return Math.round((m.p as number) * 4 + (m.c as number) * 4 + (m.f as number) * 9);
+    return Math.round(
+      (m.proteinG as number) * 4 + (m.carbsG as number) * 4 + (m.fatG as number) * 9);
   }
 
   private previewCalories(): number | null {
@@ -168,7 +200,7 @@ export struct FoodEditPage {
         }
         const input = new FoodLogInput(this.date, this.name.trim(), this.mealType,
           null, null, kcal, 1, this.aiConfidence, this.aiNotes.length > 0 ? this.aiNotes : null,
-          macros.p, macros.c, macros.f);
+          macros.proteinG, macros.carbsG, macros.fatG);
         if (this.recordId > 0) {
           await FoodRepository.update(this.recordId, input);
         } else {
@@ -194,7 +226,7 @@ export struct FoodEditPage {
         }
         const input = new FoodLogInput(this.date, this.name.trim(), this.mealType,
           weightP.value, kcalP.value, calories, 0, null, null,
-          macros.p, macros.c, macros.f);
+          macros.proteinG, macros.carbsG, macros.fatG);
         if (this.mode === 'edit' && this.recordId > 0) {
           await FoodRepository.update(this.recordId, input);
         } else {

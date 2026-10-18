@@ -214,19 +214,39 @@ export enum ThemeMode {
 
 export const THEME_PREF_KEY: string = 'caloriefit_theme';
 
-export const THEME_LABELS: Record<ThemeMode, string> = {
-  [ThemeMode.SYSTEM]: '跟随系统',
-  [ThemeMode.LIGHT]: '浅色',
-  [ThemeMode.DARK]: '深色'
-};
+/**
+ * 中文标签用函数而非 Record<K,V>。
+ * ArkTS 不支持对字段做索引访问（arkts-no-props-by-index），
+ * THEME_LABELS[mode] 这类写法编译不过，必须走函数调用。
+ */
+export function themeLabel(m: ThemeMode): string {
+  if (m === ThemeMode.LIGHT) { return '浅色'; }
+  if (m === ThemeMode.DARK) { return '深色'; }
+  return '跟随系统';
+}
 
 /** 尺寸微调：暗色下靠描边而非阴影分层，故卡片圆角略增 */
-export const darkLayout = {
+export interface DarkLayoutTokens {
+  borderWidth: number;
+  cardRadius: number;
+  gap: number;
+  pagePadding: number;
+}
+
+export const darkLayout: DarkLayoutTokens = {
   borderWidth: 1,
   cardRadius: 22,
   gap: 12,
   pagePadding: 16
 };
+
+/** 动效参数 */
+export interface MotionTokens {
+  durationFast: number;
+  durationBase: number;
+  durationSlow: number;
+  curveEaseOut: Curve;
+}
 
 /**
  * 动效参数。
@@ -234,7 +254,7 @@ export const darkLayout = {
  * FadeTransition + SlideTransition + Curves.easeOut，
  * 原 App 页面转场实测约 300ms。
  */
-export const motion = {
+export const motion: MotionTokens = {
   durationFast: 150,
   durationBase: 300,
   durationSlow: 450,
