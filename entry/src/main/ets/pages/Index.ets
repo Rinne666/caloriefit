@@ -93,10 +93,24 @@ struct Index {
     } else if (name === 'AiSettings') {
       AiSettingsPage()
     } else if (name === 'FoodLog') {
-      // 全部餐食：从底 Tab 收进二级路由，入口在「我的 → 全部餐食」
-      FoodPage()
+      /**
+       * 全部餐食：从底 Tab 收进二级路由，入口在「我的 → 全部餐食」。
+       *
+       * 必须包一层 NavDestination —— FoodPage 原本是 TabContent，
+       * 根节点是 Scroll 不是 NavDestination。直接放进路由分支的话，
+       * Navigation 没有可挂载的对象，结果是「路由推得进去、返回键也出现、
+       * 内容全白且日志无异常」。这和 ComingSoon 当初踩的是同一个坑。
+       * 页面自带标题栏，所以这里 hideTitleBar(true) 不让 Navigation 再加一条。
+       */
+      NavDestination() {
+        FoodPage()
+      }
+      .hideTitleBar(true)
     } else if (name === 'ActivityLog') {
-      ActivityPage()
+      NavDestination() {
+        ActivityPage()
+      }
+      .hideTitleBar(true)
     }
   }
 

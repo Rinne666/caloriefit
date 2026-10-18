@@ -245,6 +245,49 @@ export struct HomePage {
         .alignItems(HorizontalAlign.Center)
         .width('100%')
 
+        /**
+         * AI 拍照识别入口。
+         *
+         * 底 Tab 从 4 个换成 5 个之后，这个入口一度被埋进「我的 → 全部餐食」，
+         * 而拍照识别恰恰是原版最核心的动作 —— 原版 Home 的悬浮加号点开的就是它。
+         * 所以把它放回综合页顶部，放在所有数据卡之前：
+         * 用户打开 App 第一眼该看到的是「怎么记」，不是「已经记了多少」。
+         */
+        Column() {
+          Row() {
+            Text('📷')
+              .fontSize(28)
+            Column({ space: 2 }) {
+              Text('拍照识别食物')
+                .fontSize(fontSize.body)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(color.text)
+              Text('拍一张，AI 估算整份热量与宏量')
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text('开始')
+              .fontSize(fontSize.caption)
+              .fontColor(color.onPrimary)
+              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .backgroundColor(color.primary)
+              .borderRadius(radius.pill)
+          }
+          .width('100%')
+        }
+        .padding(layout.cardPadding)
+        .linearGradient(heroGradient())
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .shadow(glassShadow(glass.shadowRadius + 4, glass.shadowOffsetY))
+        .onClick(() => {
+          this.navStack.pushPathByName('AiRecognition',
+            new AiRecognitionNavParams(this.selectedDate));
+        })
+
         // 轮播条 —— 对应原版 Home 的横向提示轮播
         Scroll() {
           Row({ space: space.sm }) {
@@ -445,6 +488,15 @@ export class FoodEditParams {
     this.mode = mode;
     this.date = date;
     this.id = id;
+  }
+}
+
+/** AI 识别页路由参数，与 AiRecognitionPage 内部同名类结构一致 */
+export class AiRecognitionNavParams {
+  date: string = '';
+
+  constructor(date: string) {
+    this.date = date;
   }
 }
 

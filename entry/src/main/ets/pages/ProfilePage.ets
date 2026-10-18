@@ -45,7 +45,9 @@ const YOU_ENTRIES: YouEntry[] = [
     'todo', Provenance.INFERRED),
   new YouEntry('reminders', '提醒', '选择提醒类型与时间（实测 Choose Reminder Type）', 'ComingSoon',
     'todo', Provenance.INFERRED),
-  new YouEntry('vacation', '假期模式', '最长可回溯 30 天，连胜不清零', 'ComingSoon', 'todo', Provenance.MEASURED)
+  new YouEntry('vacation', '假期模式', '最长可回溯 30 天，连胜不清零', 'ComingSoon', 'todo', Provenance.MEASURED),
+  new YouEntry('customize', '自定义首页', '选择综合页要显示哪些卡片（实测 CustomizeHomeViewModel）', 'ComingSoon',
+    'todo', Provenance.MEASURED)
 ];
 
 @Component
