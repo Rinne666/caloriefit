@@ -27,6 +27,9 @@ export interface ColorTokens {
   activity: ResourceColor;
   activityLight: ResourceColor;
 
+  /** 饮水模块强调色（实测原版用青色系，与运动蓝区分开） */
+  waterAccent: ResourceColor;
+
   bg: ResourceColor;
   surface: ResourceColor;
   surfaceMuted: ResourceColor;
@@ -89,6 +92,8 @@ export const color: ColorTokens = {
 
   activity: $r('app.color.activity'),
   activityLight: $r('app.color.activity_light'),
+
+  waterAccent: $r('app.color.water_accent'),
 
   bg: $r('app.color.bg'),
   surface: $r('app.color.surface'),

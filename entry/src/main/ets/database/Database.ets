@@ -15,6 +15,7 @@ import {
 } from './Schema';
 import { migrateFoodV1ToV2 } from './MigrationV1ToV2';
 import { migrateV2ToV3 } from './MigrationV2ToV3';
+import { migrateV3ToV4 } from './MigrationV3ToV4';
 
 const DOMAIN = 0x0001;
 const TAG = 'CalorieFitDB';
@@ -95,6 +96,9 @@ export class Database {
       }
       // V2 → V3 对全量路径统一执行，内部逐列探测，重入安全
       await migrateV2ToV3(store);
+      // V3 → V4 同样全量执行：两张新表 CREATE IF NOT EXISTS，
+      // app_settings 加列前逐列探测，重复跑不会炸
+      await migrateV3ToV4(store);
     }
     store.version = DATABASE_VERSION;
     Database.store = store;
@@ -120,6 +124,11 @@ export class Database {
       await store.executeSql('DELETE FROM food_log');
       await store.executeSql('DELETE FROM exercise_log');
       await store.executeSql('DELETE FROM daily_activity');
+      // V4 新增的两张表也属于「业务记录」，清空时要一并处理，
+      // 否则点完「清空全部记录」后饮水/断食还留着旧数据，
+      // 用户会以为没清成功。
+      await store.executeSql('DELETE FROM water_log');
+      await store.executeSql('DELETE FROM fasting_log');
       store.commit();
     } catch (e) {
       const err = e as BusinessError;

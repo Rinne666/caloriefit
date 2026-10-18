@@ -13,6 +13,8 @@
     { "name": "activity", "value": "#0A84FF" },
     { "name": "activity_light", "value": "#12253A" },
 
+    { "name": "water_accent", "value": "#00C2D7" },
+
     { "name": "bg", "value": "#05060E" },
     { "name": "surface", "value": "#16182A" },
     { "name": "surface_muted", "value": "#1D2033" },

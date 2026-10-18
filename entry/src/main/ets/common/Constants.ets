@@ -17,7 +17,7 @@ export const DEFAULT_GOALS: Goals = {
 };
 
 export const DATABASE_NAME = 'caloriefit.db';
-export const DATABASE_VERSION = 3;
+export const DATABASE_VERSION = 4;
 
 /** Atwater 换算系数(kcal/g) —— 与 services/CalorieEngine.ets 保持一致 */
 export const ATWATER_PROTEIN: number = 4;

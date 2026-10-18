@@ -15,11 +15,37 @@ import {
 } from '../models/Calculation';
 import {
   color, fontSize, space, radius, layout, ThemeMode, themeLabel, pageGradient,
-  glass, glassGradient, glassShadow
+  glass, glassGradient, glassShadow, toneVeil
 } from '../common/DesignTokens';
 import { ThemeService } from '../services/ThemeService';
 import { DATA_SOURCE_LABEL } from '../common/Constants';
 import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivityKcalGoal } from '../common/Validators';
+import { YouEntry, Provenance } from '../services/MockContent';
+import { setComingSoon, ComingSoonPage } from '../components/ComingSoonPage';
+
+/**
+ * 「我的」二级入口清单。
+ *
+ * status 三档直接对应交付要求：
+ *   real  已实现，点进去是真实页面
+ *   mock  有界面但内容是示例数据
+ *   todo  原版有实现，本地无证据 / 无后端，指到 ComingSoon 占位
+ *
+ * 字段来源见 services/MockContent.ets 末尾的实测依据。
+ */
+const YOU_ENTRIES: YouEntry[] = [
+  new YouEntry('all_meals', '全部餐食', '按日期查看所有饮食记录', 'FoodLog', 'real', Provenance.MEASURED),
+  new YouEntry('activity_log', '运动记录', '按日期查看所有运动记录', 'ActivityLog', 'real', Provenance.MEASURED),
+  new YouEntry('favourite', '收藏餐食', '常用餐食快速复用（实测 /api/v1/favourite_food_items）', 'ComingSoon',
+    'todo', Provenance.INFERRED),
+  new YouEntry('ask_yourself', '问你自己', '自然语言提问饮食记录', 'ComingSoon', 'todo', Provenance.INFERRED),
+  new YouEntry('modify_macros', '修改宏量', '手动覆盖自动推导的宏量目标', 'ComingSoon', 'real', Provenance.MEASURED),
+  new YouEntry('repeat_meals', '重复餐食', '设置常吃餐食的重复计划（实测 Edit repeat meal schedule）', 'ComingSoon',
+    'todo', Provenance.INFERRED),
+  new YouEntry('reminders', '提醒', '选择提醒类型与时间（实测 Choose Reminder Type）', 'ComingSoon',
+    'todo', Provenance.INFERRED),
+  new YouEntry('vacation', '假期模式', '最长可回溯 30 天，连胜不清零', 'ComingSoon', 'todo', Provenance.MEASURED)
+];
 
 @Component
 export struct ProfilePage {
@@ -28,8 +54,52 @@ export struct ProfilePage {
   /** 页面内容入场开关，见 build() 末尾的 opacity/translate */
   @State private entered: boolean = false;
 
+  /** 未实现功能覆盖层是否展开（页内自持，见 build() 注释） */
+  @State private csVisible: boolean = false;
+
   enterPage(): void {
     this.entered = true;
+  }
+
+  /**
+   * 二级入口分发。
+   *
+   * modify_macros 标 real 但功能就在本页「每日目标设置」卡里，
+   * 所以不跳页只提示；其余按 route 分发：真页面推真路由，
+   * 没做的推 ComingSoon 占位。
+   */
+  private openYouEntry(e: YouEntry): void {
+    if (e.id === 'modify_macros') {
+      this.getUIContext().getPromptAction().showToast({ message: '宏量目标在本页「每日目标设置」中修改' });
+      return;
+    }
+    if (e.route === 'FoodLog' || e.route === 'ActivityLog') {
+      this.navStack.pushPathByName(e.route, new YouRouteParams(e.route));
+      return;
+    }
+    setComingSoon(e.title, e.subtitle, '原版有实现，本地没有可复现的证据或后端',
+      '抓包 / 补后端 / 补算法后即可替换为真实页面', e.provenance);
+    this.csVisible = true;
+  }
+
+  private statusBadge(status: string): string {
+    if (status === 'real') {
+      return '已实现';
+    }
+    if (status === 'mock') {
+      return '示例';
+    }
+    return '未实现';
+  }
+
+  private statusColor(status: string): ResourceColor {
+    if (status === 'real') {
+      return color.macroOk;
+    }
+    if (status === 'mock') {
+      return color.primary;
+    }
+    return color.textHint;
   }
 
   @State budgetInput: string = '1800';
@@ -282,8 +352,18 @@ export struct ProfilePage {
   }
 
   build() {
-    Scroll() {
-      Column({ space: space.md }) {
+    /**
+     * 本页自持的未实现功能覆盖层。
+     *
+     * 刻意不用跨组件状态（AppStorage / NavPathStack）来弹这一层：
+     * 实测走 NavPathStack 推同名目标页时目标内容永远挂不上树，
+     * 走 AppStorage 跨组件同步也没生效 —— 两种跨组件通道都试过、都失败。
+     * 而同一个 @Component 内部的 @State 一定可靠，所以改成页内持有。
+     * 代价是每个有「未实现」入口的页都要自己挂一层，换来的是真的能用。
+     */
+    Stack() {
+      Scroll() {
+        Column({ space: space.md }) {
         Text('我的')
           .fontSize(fontSize.pageTitle)
           .fontWeight(FontWeight.Bold)
@@ -666,6 +746,57 @@ export struct ProfilePage {
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
 
+        // 记录与偏好：把二级功能集中在一处，保证任何入口都不是死路。
+        // 饮食/运动记录是真实页面；其余原版有实现但本地无证据的，
+        // 统一指到 ComingSoon 占位，入口本身先立起来。
+        Column({ space: space.xs }) {
+          Text('记录与偏好')
+            .fontSize(fontSize.sectionTitle)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(color.text)
+            .width('100%')
+
+          ForEach(YOU_ENTRIES, (e: YouEntry) => {
+            Row() {
+              Column({ space: 2 }) {
+                Text(e.title)
+                  .fontSize(fontSize.body)
+                  .fontColor(color.text)
+                Text(e.subtitle)
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+
+              Text(this.statusBadge(e.status))
+                .fontSize(fontSize.caption)
+                .fontColor(this.statusColor(e.status))
+                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                .backgroundColor(color.glassFill)
+                .borderRadius(radius.small)
+              .margin({ right: 6 })
+
+              Text('›')
+                .fontSize(fontSize.sectionTitle)
+                .fontColor(color.textHint)
+            }
+            .width('100%')
+            .padding({ top: space.sm, bottom: space.sm })
+            .onClick(() => {
+              this.openYouEntry(e);
+            })
+          }, (e: YouEntry) => e.id)
+        }
+        .width('100%')
+        .padding(layout.cardPadding)
+        .linearGradient(glassGradient(toneVeil('you-entries')))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
+        .alignItems(HorizontalAlign.Start)
+
         // 数据来源
         Column({ space: space.xs }) {
           Text('数据来源')
@@ -738,12 +869,48 @@ export struct ProfilePage {
       .onAppear(() => {
         this.enterPage();
       })
+      }
+      .width('100%')
+      .height('100%')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+      .backgroundColor(color.bg)
+      .linearGradient(pageGradient())
+
+      if (this.csVisible) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          ComingSoonPage()
+
+          Button('‹')
+            .width(44)
+            .height(44)
+            .fontSize(26)
+            .fontColor(color.text)
+            .backgroundColor(Color.Transparent)
+            .margin({ top: 46, left: 16 })
+            .onClick(() => {
+              this.csVisible = false;
+            })
+        }
+        .width('100%')
+        .height('100%')
+      }
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
-    .scrollBar(BarState.Off)
-    .backgroundColor(color.bg)
-    .linearGradient(pageGradient())
+  }
+}
+
+/**
+ * 「全部餐食」/「运动记录」的路由参数。
+ *
+ * NavPathStack 的 pushPathByName 第二参必须是对象，不能直接传字符串，
+ * 所以这里包一层，只带一个 route 标识供目标页做标题显示。
+ */
+export class YouRouteParams {
+  route: string;
+
+  constructor(route: string) {
+    this.route = route;
   }
 }
