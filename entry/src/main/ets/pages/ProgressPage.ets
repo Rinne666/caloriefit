@@ -19,7 +19,6 @@ import { DailySummaryService } from '../services/DailySummaryService';
 import { PROGRESS_RANGES, Provenance } from '../services/MockContent';
 import { setComingSoon, ComingSoonPage } from '../components/ComingSoonPage';
 import { toDateKey, parseDateKey, formatNumber } from '../common/DateUtils';
-
 const DAY_LABELS: string[] = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 @Component
@@ -32,6 +31,37 @@ export struct ProgressPage {
   @State private entered: boolean = false;
   /** 未实现功能覆盖层（页内自持，原因见 ProfilePage 同字段注释） */
   @State private csVisible: boolean = false;
+  /** 连续记录天数（原版页头有 🔥 Streak） */
+  @State private streakDays: number = 0;
+  /** Report 导出的占位层 */
+  @State private reportVisible: boolean = false;
+
+  /**
+   * 连续记录天数：从今天往回数，每天有饮食记录则累计。
+   * 今天还没记不算断 —— 从昨天起算更符合用户直觉（早上还没吃早饭不该断签）。
+   */
+  private computeStreak(series: DayPoint[]): number {
+    const recorded: Map<string, boolean> = new Map();
+    for (let i = 0; i < series.length; i++) {
+      recorded.set(series[i].date, series[i].kcal > 0);
+    }
+    let n = 0;
+    let cursor = this.selectedDate;
+    if (recorded.get(cursor) === true) {
+      n = 1;
+    }
+    for (let i = 0; i < 60; i++) {
+      const d = parseDateKey(cursor);
+      d.setDate(d.getDate() - 1);
+      cursor = toDateKey(d);
+      if (recorded.get(cursor) === true) {
+        n++;
+      } else {
+        break;
+      }
+    }
+    return n;
+  }
 
   enterView(): void {
     this.entered = true;
@@ -59,6 +89,14 @@ export struct ProgressPage {
       this.points = await MacroRepository.getTrend(from, to);
     } catch (e) {
       this.points = [];
+    }
+    // 连胜要跨更长的窗口，不能只看出图区间 —— 切到「今天」时会误判成 0
+    try {
+      const to = this.selectedDate;
+      const series = await MacroRepository.getTrend(this.shift(to, -59), to);
+      this.streakDays = this.computeStreak(series);
+    } catch (e) {
+      this.streakDays = 0;
     }
   }
 
@@ -151,6 +189,39 @@ export struct ProgressPage {
           .fontWeight(FontWeight.Bold)
           .fontColor(color.text)
           .width('100%')
+
+        /**
+         * 页头：连胜 + Report。
+         *
+         * 原版 Progress 页头有「🔥 Streak: N days」与「Report」导出按钮
+         * （实测 main_nav_04_Progress.png），此前这两项都缺。
+         * Streak 是真数据（按近 30 天有无饮食记录往回数）；
+         * Report 导出无对应实现，走未实现占位而不是留一个死按钮。
+         */
+        Row() {
+          Text(`🔥 连续记录 ${this.streakDays} 天`)
+            .fontSize(fontSize.secondary)
+            .fontColor(color.text)
+
+          Blank()
+
+          Text('Report')
+            .fontSize(fontSize.secondary)
+            .fontColor(color.primary)
+            .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+            .backgroundColor(color.glassFill)
+            .borderRadius(radius.pill)
+            .onClick(() => {
+              setComingSoon('Report 导出',
+                '把一段时间的摄入与宏量导出为可分享的报告',
+                '原版有导出按钮，本地没有对应的生成与分享实现',
+                '确定导出格式（图片 / PDF）并接入系统分享后即可补齐',
+                Provenance.MEASURED);
+              this.reportVisible = true;
+            })
+        }
+        .width('100%')
+        .padding({ top: space.sm, bottom: space.sm })
 
         // 筛选：今天 / 本周 / 近 30 天
         Row({ space: space.sm }) {
@@ -291,6 +362,25 @@ export struct ProgressPage {
     .scrollBar(BarState.Off)
     .backgroundColor(color.bg)
     .linearGradient({ angle: 135, colors: [[color.pageDeep, 0], [color.pageMid, 1]] })
+
+      if (this.reportVisible) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          ComingSoonPage()
+
+          Button('‹')
+            .width(44)
+            .height(44)
+            .fontSize(26)
+            .fontColor(color.text)
+            .backgroundColor(Color.Transparent)
+            .margin({ top: 46, left: 16 })
+            .onClick(() => {
+              this.reportVisible = false;
+            })
+        }
+        .width('100%')
+        .height('100%')
+      }
 
       if (this.csVisible) {
         Stack({ alignContent: Alignment.TopStart }) {

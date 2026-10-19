@@ -261,10 +261,13 @@ export struct HomePage {
               Text('拍照识别食物')
                 .fontSize(fontSize.body)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(color.text)
+                // 这张卡压在 heroGradient() 上，必须用白字系 ——
+                // 之前跟 color.text / color.textHint 走，浅色主题下是
+                // 深绿压蓝紫，几乎读不出来。
+                .fontColor('#FFFFFF')
               Text('拍一张，AI 估算整份热量与宏量')
                 .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+                .fontColor('#B3FFFFFF')
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)

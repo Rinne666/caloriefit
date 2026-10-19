@@ -114,6 +114,24 @@ struct Index {
     }
   }
 
+  /**
+   * 底 Tab 项：图标 + 文字。
+   *
+   * 之前只给文字，与原版「图标+文字」不一致（实测 main_nav_04_Progress.png
+   * 五个 Tab 都带图标）。今日页的四个子页已经是图标+文字，底栏保持一致。
+   */
+  @Builder
+  TabItem(icon: string, label: string) {
+    Column({ space: 2 }) {
+      Text(icon)
+        .fontSize(20)
+      Text(label)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+    }
+    .justifyContent(FlexAlign.Center)
+  }
+
   build() {
     Navigation(this.navStack) {
       if (!this.appReady) {
@@ -138,27 +156,27 @@ struct Index {
             TabContent() {
               HomeTabs()
             }
-            .tabBar('今日')
+            .tabBar(this.TabItem('📊', '今日'))
 
             TabContent() {
               DietPlanPage()
             }
-            .tabBar('膳食')
+            .tabBar(this.TabItem('🥗', '膳食'))
 
             TabContent() {
               ProgressPage()
             }
-            .tabBar('进度')
+            .tabBar(this.TabItem('📈', '进度'))
 
             TabContent() {
               NutriBitesPage()
             }
-            .tabBar('营养师')
+            .tabBar(this.TabItem('💬', '营养师'))
 
             TabContent() {
               ProfilePage()
             }
-            .tabBar('我的')
+            .tabBar(this.TabItem('👤', '我的'))
           }
           .width('100%')
           .height('100%')
