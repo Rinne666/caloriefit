@@ -63,28 +63,61 @@ export struct AiSettingsPage {
       return;
     }
     try {
+      const previousConfig = await AiConfigRepository.loadConfig();
+      const previousKey = await AiCredentialStore.getApiKey();
       const config = new AiConfig(baseUrl, model, this.rememberKey);
-      await AiConfigRepository.saveConfig(config);
       const key = this.keyInput.trim();
+      let credentialChanged = false;
+      let storedKey = false;
+
       if (key.length > 0) {
         await AiCredentialStore.saveApiKey(key, this.rememberKey);
-        if (this.rememberKey) {
-          const ok = await AiCredentialStore.canPersistSecurely();
-          if (!ok) {
-            AppDialogService.toast('无法安全记住 Key，本次会话内有效');
-          } else {
-            AppDialogService.toast('配置已保存，API Key 已安全记住');
-          }
-        } else {
-          AppDialogService.toast('配置已保存，Key 本次会话内有效');
+        credentialChanged = true;
+        storedKey = this.rememberKey;
+      } else if (this.rememberKey) {
+        // 从会话模式切换为安全记住时，将当前已配置的密钥写入安全存储。
+        const existingKey = previousKey ?? '';
+        if (!previousConfig.rememberApiKey && existingKey.length > 0) {
+          await AiCredentialStore.saveApiKey(existingKey, true);
+          credentialChanged = true;
+          storedKey = true;
         }
+      } else {
+        // 即使输入框为空，关闭“安全记住”也必须移除旧的持久化密钥。
+        await AiCredentialStore.forgetPersistedApiKey();
+        credentialChanged = true;
+      }
+
+      try {
+        await AiConfigRepository.saveConfig(config);
+      } catch (e) {
+        // 配置落盘失败时，尽量恢复之前的凭证状态，避免开关与安全存储不一致。
+        if (credentialChanged) {
+          try {
+            if (previousKey !== null && previousKey.length > 0) {
+              await AiCredentialStore.saveApiKey(previousKey, previousConfig.rememberApiKey);
+            } else {
+              await AiCredentialStore.clearApiKey();
+            }
+          } catch (rollbackError) {
+            console.error(`AI credential rollback failed: ${String(rollbackError)}`);
+          }
+        }
+        const saveError = e as Error;
+        throw new Error(saveError.message);
+      }
+
+      if (storedKey) {
+        AppDialogService.toast('配置已保存，API Key 已安全记住');
+      } else if (key.length > 0 || (!this.rememberKey && previousKey !== null)) {
+        AppDialogService.toast('配置已保存，Key 本次会话内有效');
       } else {
         AppDialogService.toast('配置已保存');
       }
       this.keyInput = '';
       this.hasStoredKey = (await AiCredentialStore.getApiKey()) !== null;
     } catch (e) {
-      AppDialogService.toast('保存失败：当前环境无法安全存储，请改用会话模式');
+      AppDialogService.toast('配置或密钥保存失败，请检查后重试');
     }
   }
 

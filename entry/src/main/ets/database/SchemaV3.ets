@@ -19,23 +19,23 @@
 export const SQL_CREATE_BODY_PROFILE: string = `
 CREATE TABLE IF NOT EXISTS body_profile (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  weight_kg REAL NOT NULL DEFAULT 65,
-  height_cm INTEGER NOT NULL DEFAULT 170,
-  age_years INTEGER NOT NULL DEFAULT 30,
-  sex TEXT NOT NULL DEFAULT 'male'
-    CHECK (sex IN ('male', 'female')),
+  weight_kg REAL NOT NULL DEFAULT 0,
+  height_cm INTEGER NOT NULL DEFAULT 0,
+  age_years INTEGER NOT NULL DEFAULT 0,
+  sex TEXT NOT NULL DEFAULT 'unspecified'
+    CHECK (sex IN ('unspecified', 'male', 'female')),
   body_fat_ratio REAL
     CHECK (
       body_fat_ratio IS NULL OR
       (body_fat_ratio > 0 AND body_fat_ratio < 0.7)
     ),
-  activity TEXT NOT NULL DEFAULT 'moderate'
+  activity TEXT NOT NULL DEFAULT 'unspecified'
     CHECK (
-      activity IN ('sedentary', 'light', 'moderate', 'very_active', 'athlete')
+      activity IN ('unspecified', 'sedentary', 'light', 'moderate', 'very_active', 'athlete')
     ),
-  goal_mode TEXT NOT NULL DEFAULT 'weight_loss'
+  goal_mode TEXT NOT NULL DEFAULT 'unspecified'
     CHECK (
-      goal_mode IN ('weight_loss', 'maintain', 'surplus', 'deficit', 'recomp')
+      goal_mode IN ('unspecified', 'weight_loss', 'maintain', 'surplus', 'deficit', 'recomp')
     ),
   updated_at INTEGER NOT NULL
 )`;
@@ -44,7 +44,7 @@ export const SQL_INIT_BODY_PROFILE: string = `
 INSERT OR IGNORE INTO body_profile
   (id, weight_kg, height_cm, age_years, sex, body_fat_ratio,
    activity, goal_mode, updated_at)
-  VALUES (1, 65, 170, 30, 'male', NULL, 'moderate', 'weight_loss', 0)
+  VALUES (1, 0, 0, 0, 'unspecified', NULL, 'unspecified', 'unspecified', 0)
 `;
 
 // ---------- food_log 宏量列(V2 → V3) ----------

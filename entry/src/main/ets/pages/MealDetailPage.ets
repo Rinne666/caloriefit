@@ -154,7 +154,6 @@ export struct MealDetailPage {
             .linearGradient(glassGradient(toneVeil(`meal-${this.mealType}`)))
             .borderRadius(glass.cardRadius)
             .border({ width: glass.borderWidth, color: color.glassBorder })
-            .backdropBlur(glass.blurRadius)
             .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
             .alignItems(HorizontalAlign.Start)
 
@@ -260,7 +259,6 @@ export struct MealDetailPage {
     .linearGradient(glassGradient(color.glassFill))
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .alignItems(HorizontalAlign.Start)
   }
 }

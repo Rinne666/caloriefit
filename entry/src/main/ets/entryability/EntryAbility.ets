@@ -48,6 +48,6 @@ export default class EntryAbility extends UIAbility {
    * 异步但不阻塞：loadContent 已完成，深色资源由系统按 ColorMode 加载。
    */
   private restoreTheme(): void {
-    ThemeService.restore(this.context.getApplicationContext());
+      ThemeService.restore(this.context);
   }
 }

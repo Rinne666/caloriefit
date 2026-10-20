@@ -9,6 +9,7 @@
 
 /** 性别 */
 export enum Sex {
+  UNSPECIFIED = 'unspecified',
   MALE = 'male',
   FEMALE = 'female'
 }
@@ -18,6 +19,7 @@ export enum Sex {
  * 原 App 引导页文案:"Activity Level" / "Daily Workout/Activity Level"
  */
 export enum ActivityLevel {
+  UNSPECIFIED = 'unspecified',
   SEDENTARY = 'sedentary',
   LIGHT = 'light',
   MODERATE = 'moderate',
@@ -30,6 +32,7 @@ export enum ActivityLevel {
  * 原 App 字符串命中:weight_loss / maintain / surplus / deficit / recomp
  */
 export enum GoalMode {
+  UNSPECIFIED = 'unspecified',
   WEIGHT_LOSS = 'weight_loss',
   MAINTAIN = 'maintain',
   SURPLUS = 'surplus',
@@ -81,17 +84,19 @@ export class BodyProfile {
     this.updatedAt = updatedAt;
   }
 
-  /** 新用户默认值 */
+  /** 空档案；不能用虚构体征为新用户预填健康数据。 */
   static defaults(): BodyProfile {
     return new BodyProfile(
-      65, 170, 30, Sex.MALE, null,
-      ActivityLevel.MODERATE, GoalMode.WEIGHT_LOSS, 0
+      0, 0, 0, Sex.UNSPECIFIED, null,
+      ActivityLevel.UNSPECIFIED, GoalMode.UNSPECIFIED, 0
     );
   }
 
-  /** 是否已完成体征采集(至少可算出目标) */
+  /** 体征和目标偏好齐全后才可推导热量目标。 */
   isComplete(): boolean {
-    return this.weightKg > 0 && this.heightCm > 0 && this.ageYears > 0;
+    return this.weightKg > 0 && this.heightCm > 0 && this.ageYears > 0 &&
+      this.sex !== Sex.UNSPECIFIED && this.activity !== ActivityLevel.UNSPECIFIED &&
+      this.mode !== GoalMode.UNSPECIFIED;
   }
 }
 
@@ -102,6 +107,7 @@ export class BodyProfile {
  * THEME_LABELS[a] 这类写法会直接编译失败，必须走函数调用。
  */
 export function activityLabel(a: ActivityLevel): string {
+  if (a === ActivityLevel.UNSPECIFIED) { return '未选择'; }
   if (a === ActivityLevel.SEDENTARY) { return '久坐'; }
   if (a === ActivityLevel.LIGHT) { return '轻度活动'; }
   if (a === ActivityLevel.VERY_ACTIVE) { return '高强度'; }
@@ -110,6 +116,7 @@ export function activityLabel(a: ActivityLevel): string {
 }
 
 export function modeLabel(g: GoalMode): string {
+  if (g === GoalMode.UNSPECIFIED) { return '未选择'; }
   if (g === GoalMode.MAINTAIN) { return '维持'; }
   if (g === GoalMode.SURPLUS) { return '增重'; }
   if (g === GoalMode.DEFICIT) { return '控卡'; }
@@ -118,5 +125,6 @@ export function modeLabel(g: GoalMode): string {
 }
 
 export function sexLabel(s: Sex): string {
+  if (s === Sex.UNSPECIFIED) { return '未选择'; }
   return s === Sex.MALE ? '男' : '女';
 }

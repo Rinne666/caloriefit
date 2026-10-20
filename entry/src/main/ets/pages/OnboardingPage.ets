@@ -6,7 +6,8 @@
  *
  * 与原版的差异（有意为之）：
  *   · 没有语言选择屏 —— 本 App 只发中文，做一屏只能选自己
- *   · 没有订阅墙     —— 原版是虚假折扣（划线价与实付价相同却宣称 70% off），不克隆
+ *   · 没有订阅墙     —— 本项目定位为完全免费，不设试用/升级/订阅墙
+ *                        （原版那一屏还是虚假折扣：划线价与实付价相同却宣称 70% off）
  *   · 引导结果会**真的写进体征档案**，直接驱动 BMR/TDEE 与宏量目标推导
  *
  * 白底黑字的大药丸 CTA 是原版最强的视觉符号之一，两种主题下都保留。
@@ -83,17 +84,6 @@ export struct OnboardingPage {
 
   private progressRatio(): number {
     return (this.step + 1) / ONBOARD_STEP_COUNT;
-  }
-
-  /**
-   * 末步 CTA 文案。
-   *
-   * 刻意写成方法而不是在 @Builder 调用处写行内三元：
-   * 实测 @Builder 的实参表达式不会随 @State 变化重新求值，
-   * 走到第 5 步时按钮仍显示「继续」。改成方法调用后正常。
-   */
-  private ctaLabel(): string {
-    return this.step === OnboardStep.LIFESTYLE ? '开始使用' : '继续';
   }
 
   /* ---------------- 各步骤标题 ---------------- */
@@ -324,10 +314,10 @@ export struct OnboardingPage {
         Text('CalorieFit')
           .fontSize(40)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
+          .fontColor(color.text)
         Text('记录 · 目标 · 一眼看懂今天还差多少')
           .fontSize(fontSize.secondary)
-          .fontColor('#B3FFFFFF')
+          .fontColor(color.textSecondary)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
@@ -336,7 +326,7 @@ export struct OnboardingPage {
 
       Text('准备中…')
         .fontSize(fontSize.caption)
-        .fontColor('#80FFFFFF')
+        .fontColor(color.textHint)
     }
     .width('100%')
     .height('100%')
@@ -357,7 +347,7 @@ export struct OnboardingPage {
             .width(40)
             .height(40)
             .fontSize(24)
-            .fontColor(this.step === OnboardStep.GOAL ? '#80FFFFFF' : color.text)
+            .fontColor(this.step === OnboardStep.GOAL ? color.disabledText : color.text)
             .backgroundColor(Color.Transparent)
             .enabled(this.step !== OnboardStep.GOAL)
             .onClick(() => {
@@ -417,13 +407,17 @@ export struct OnboardingPage {
           .linearGradient(glassGradient(toneVeil(`onboard-${this.step + 1}`)))
           .borderRadius(glass.cardRadius)
           .border({ width: glass.borderWidth, color: color.glassBorder })
-          .backdropBlur(glass.blurRadius)
           .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
           .alignItems(HorizontalAlign.Start)
 
           Blank()
 
-          this.Cta(this.ctaLabel(), true)
+          // 把末步判断放在组件树里，让 step 的 @State 变化驱动按钮文案刷新。
+          if (this.step === OnboardStep.LIFESTYLE) {
+            this.Cta('开始使用', true)
+          } else {
+            this.Cta('继续', true)
+          }
         }
         .width('100%')
         .layoutWeight(1)

@@ -1,55 +1,68 @@
 # CalorieFit 卡路里管家
 
-HarmonyOS 原生（ArkTS / API 26）卡路里与运动目标管理 App。由 ChatGPT 担任产品经理（调研/选型/视觉/开发文档），本工作区为工程实现与调试产物。
+基于 ArkTS / ArkUI 的 HarmonyOS 原生饮食与活动记录应用。当前应用包名为 `com.rinne.caloriefit`，目标 SDK 为 HarmonyOS API 26。
 
-## 技术栈
+## 功能概览
 
-- **语言/UI**：ArkTS + ArkUI（声明式），Stage 模型
-- **SDK**：HarmonyOS 26.0.0（API 26），compatibleSdkVersion `26.0.0`
-- **存储**：ArkData RDB（`caloriefit.db`，4 张表：app_settings / food_log / exercise_log / daily_activity）
-- **三方依赖**：0
-- **运动数据**：本地模拟（`MockActivityDataSource`，预留 `ActivityDataSource` 接口接 Health Service Kit）
+- 首次启动引导：目标、活动量、通知、补剂和生活方式；目标与活动量写入体征档案，并用于 BMR/TDEE 推导。
+- 五个主 Tab：今日、膳食、进度、营养师、我的。今日含综合、饮水、断食三个个人记录子页；膳食含计划、购物清单、补剂、生活方式四个子页。产品面向单用户，不包含社群、好友动态或公开资料功能。
+- **应用完全免费**：无应用内购买、无订阅、无付费墙，所有已实现功能默认全部开放。NutriScan 原版的「免费试用 1 周」与渐变「升级」入口已按产品决策整体删除。
+- 食物与运动记录、餐食详情、宏量营养素目标、体征档案、主题偏好。
+- “我的”页可清除本地健康档案、目标、记录和 AI 凭证；删除后不再用虚构体征值填充档案，饮水目标显示为未设置。
+- 饮水和断食记录保存在本地 RDB；示例和推断内容有来源标识，尚未实现的入口进入说明页。
+- AI 食物识别支持内置演示数据和用户配置的兼容服务。演示模式不发送网络请求；真实识别会将选中的照片发送到配置的 AI 服务进行分析。照片分析结果仅供参考。
 
-## 功能（MVP V1.0）
+## 定价与收费
 
-- 今日：热量进度环（摄入/预算/剩余）、活动消耗、步数与运动时长进度、快捷记录
-- 饮食：早/午/晚/加餐分组记录，重量 × 每100g热量自动计算，增删改
-- 运动：手动运动记录（类型/时长/消耗）、模拟步数（覆盖式保存）
-- 我的：四项目标设置、清空全部记录（事务 + 二次确认）
-- 全部数据本地持久化；仅浅色模式
+**本应用完全免费。** 没有应用内购买、没有订阅套餐、没有试用倒计时、没有权益墙，也没有服务端订阅校验。
 
-## 目录结构
+唯一的外部成本来自 AI 食物识别：真实识别使用**用户自己配置的 API Key**，调用额度与费用由用户的模型服务商承担，与本应用无关。演示模式不发送网络请求。
 
-```
-entry/src/main/ets/
-├── entryability/EntryAbility.ets   # 入口，固定浅色模式
-├── pages/                          # Index(唯一@Entry) + 4 Tab页 + 2 编辑页(NavDestination)
-├── components/                     # CalorieRing / MetricCard / EmptyState
-├── common/                         # DesignTokens / Constants / DateUtils / Validators
-├── models/                         # 5 个数据模型
-├── database/                       # Database(RDB单例) / Schema(建表SQL)
-├── repositories/                   # 4 个 Repository（UI 层不直接碰 SQL）
-└── services/                       # CalorieService / DailySummaryService / 数据源接口
-```
+界面上的体现：今日页页头显示不可点的「全部功能免费」标识；「我的 → 版本与授权」写明上述边界。
 
-## 构建与部署
+## 技术栈与数据
 
-```bash
-# 构建（DevEco Studio 26 自带 hvigor）
-export DEVECO_SDK_HOME="C:/Program Files/Huawei/DevEco Studio/sdk"
-"C:/Program Files/Huawei/DevEco Studio/tools/hvigor/bin/hvigorw" \
+- **UI / 语言**：ArkUI 声明式 UI、ArkTS、Stage 模型。
+- **SDK**：HarmonyOS 26.0.0，`compatibleSdkVersion` / `targetSdkVersion` 为 `26.0.0`。
+- **持久化**：ArkData RDB（`caloriefit.db`），当前 7 张业务表：`app_settings`、`food_log`、`exercise_log`、`daily_activity`、`body_profile`、`water_log`、`fasting_log`。`food_log_v2` 是迁移过程使用的临时表。
+- **依赖**：`@pura/harmony-dialog`（`^1.1.8`）。
+- **运动数据**：当前步数为本地模拟数据；运动记录由用户手动填写。
+- **主题**：新安装默认深色以还原 NutriScan 实测视觉；用户可改为跟随系统或浅色。
+
+## 构建与安装（调试版）
+
+使用本机 DevEco Studio 自带的 Hvigor 与 HDC：
+
+```powershell
+$env:DEVECO_SDK_HOME="C:/Program Files/Huawei/DevEco Studio/sdk"
+& "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat" `
   --mode module -p product=default -p buildMode=debug assembleHap --no-daemon
 
-# 安装到模拟器（本机模拟器接受未签名 HAP）
-hdc install -r entry/build/default/outputs/default/entry-default-unsigned.hap
-hdc shell aa start -b com.rinne.caloriefit -a EntryAbility
+$hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe"
+& $hdc tconn 127.0.0.1:5555
+& $hdc install -r entry\build\default\outputs\default\entry-default-unsigned.hap
+& $hdc shell aa start -b com.rinne.caloriefit -a EntryAbility
 ```
 
-## 验收状态（2026-10-17）
+上面的 HAP 是未签名调试包，可用于本机模拟器调试。目前 `build-profile.json5` 没有配置签名档，尚未产出可分发的正式签名包；发布前需要配置开发者证书、Profile 和正式签名设置。
 
-GPT 第 2 步定义的 7 条 MVP 验收标准全部实测通过（截图见 `screenshots/`）：
-四 Tab 切换 ✅ / 195 kcal 计算 ✅ / 增删同步 ✅ / 运动汇总 ✅ / 77.5% 进度 ✅ / 目标全局一致 ✅ / 重启持久化 ✅
+## 当前验证状态（2026-10-20）
 
-## 产品经理对话
+- **「完全免费」版本（本轮最新）**：调试 HAP `entry/build/default/outputs/default/entry-default-unsigned.hap`，2,824,437 字节，SHA-256 `eb04da31e0a5ba40b98807398c328fe6c95cd786bf1109932ec6b25a0f89d56c`，09:29 构建。`assembleHap` BUILD SUCCESSFUL，已安装到 Mate 90 Pro 模拟器。`_tools/verify_all.py` 结果 **10 PASS、1 SKIP、0 FAIL（11 项）**；唯一 SKIP 是饮水 V4 持久化 —— 模拟器已有饮水记录，脚本为避免覆盖现有记录主动跳过，与本次改动无关。专项实机确认：今日页页头渲染「全部功能免费」且 UI 树中已无「免费试用 1 周」/「升级」；「我的 → 版本与授权」卡正常渲染；饮水页火焰图标仍为橙色（`streak_orange` 生效）。日志：`work/nutriscan-ui-fidelity-20261019/evidence/verification-20261020-free-version.txt`；截图：`_tools/shots/free_header.jpeg`、`free_profile.jpeg`、`free_license.jpeg`、`free_water.jpeg`。
+- 上一版调试 HAP（SHA-256 `70636AD95DFDF149DB5C7C1B615E735931B5A9A4C5EB9B1C20520CF8030933DD`）的回归为 11 PASS、0 SKIP、0 FAIL，已被上述版本取代。
+- 最新调试 HAP 由当前源码构建，已安装到 Mate 90 Pro 模拟器并用于本轮回归：`entry/build/default/outputs/default/entry-default-unsigned.hap`，2,812,758 字节，SHA-256 `70636AD95DFDF149DB5C7C1B615E735931B5A9A4C5EB9B1C20520CF8030933DD`。本轮 `_tools/verify_all.py` 结果为 **11 PASS、0 SKIP、0 FAIL**，覆盖综合页、AI 入口和本地演示识别、轮播像素差分、餐食列表与详情、饮水/断食 V4 重启持久化。饮水测试读取 250 ml 后通过页面“撤销”清理了测试记录；断食测试结束了本次测试方案。日志：`work/nutriscan-ui-fidelity-20261019/evidence/verification-20261020-single-user-final.txt`；截图位于 `_tools/shots/`。此 HAP 未签名，项目没有配置发布签名；ArkTS 编译警告仍需发布前处理或逐条确认。
+- 本轮将“综合”子页图标换为本地食物碗 SVG，并将饮水“撤销”入口移入快捷记录区；轮播像素变化 **16.6%**，主卡锚点变化 **0.00%**。最新综合页与轮播截图分别为 `_tools/shots/v_01_home.jpeg`、`_tools/shots/v_03_carousel.jpeg`。回归结束后模拟器已返回“今日热量”首页。
+- release `assembleHap` 也成功编译；未签名包已在 Mate 90 Pro 模拟器安装并启动到首页，完成一次冒烟确认。Hvigor明确跳过签名：工程没有 release certificate/Profile。release HAP 单独留档于 `work/nutriscan-ui-fidelity-20261019/artifacts/entry-default-release-unsigned.hap`（1,273,773 字节，SHA-256 `B9D686CE9672923B90D70EA9BC8FF87B006E613DEB47ECF37C42A0A20C4E72AB`），不能上传 AppGallery。当前 release 混淆仍关闭，需在完成规则配置和运行回归后再决定启用。
+- Hvigor `assembleApp` 也成功生成 release App Pack；Hvigor 对 `.app` 同样跳过签名。产物留档于 `work/nutriscan-ui-fidelity-20261019/artifacts/calories-default-release-unsigned.app`（618,088 字节，SHA-256 `B39FA1511D66395334D690279CFD9A8EB2830129DB6D96441EFBA94A5D782BA4`）。这不是可上传的签名包。
+- 首页半环、单卡提示轮播与方形空餐食卡已按参考图修正；较早单用户校准截图为 `work/nutriscan-ui-fidelity-20261019/evidence/single-user-scope/home-layout-final.jpeg`。模拟器截图只验证模拟器画面；当前 ADB 未列出真机，因此真机逐页安全区域和视觉对照仍待设备桥接恢复。
+- 此前 **8/8** 的完整回归属于旧 HAP（SHA-256 `90137BE19295323D973AE2DE56004DCFF9FFDB55261C706B9230B30F3BE6963F`，15:09 构建），不是本轮结果。该次确认新安装默认深色，隐私页与首页背景/卡片/描边为 `#0C0C0C / #1C1C1E / #2F2F33`；轮播横带像素变化 **36.6%**、首页主卡锚点变化 **0.00%**。截图见 `work/nutriscan-ui-fidelity-20261019/evidence/regression-20261019-1509-dark-default/`。
+- 饮水 V4 的重启持久化曾因模拟器已有记录而跳过；此限制已由 2026-10-20 当前 HAP 的回归覆盖并通过。更早水与断食都通过强停重启的记录属于前一 HAP（SHA-256 `9DD96224E0F8FA9990D94C3BC9B0034FB62681827218F6AF3C4B70FE6EF30055`）。
+- AppGallery 图标已从项目矢量图标生成 `store-assets/appgallery/icon-1024.png`，尺寸与 PNG 格式已检查；商店截图尚未生成，须从已验证的最新构建采集。HarmonyOS 手机/平板要求 3–5 张 1080×1920 竖屏截图，详见[华为 AppGallery 素材规格](https://developer.huawei.com/consumer/en/doc/agc-help-app-visual-asset-spec-0000002277607976)。
+- 本次设备复查中 HDC 只发现 `127.0.0.1:5555` Mate 90 Pro 模拟器；ADB 设备列表与 mDNS 服务列表为空，Windows PnP 中也没有 Xiaomi/Android 设备。因此本轮不能声称已完成真机逐屏验收。
+- 隐私专项运行通过：临时假 API Key 开启“安全记住”后，强制停止并重启应用仍可读回；真实识别展示 HTTPS 接收地址、照片与 API Key 说明，点取消后没有识别结果，也未发送网络请求；删除/撤回操作将应用送回首启同意页。HDC 不允许直接列出应用沙箱，因此未独立读取数据库/Asset 内容确认删除后的底层值。记录见 `work/nutriscan-ui-fidelity-20261019/evidence/verification-20261019-privacy-runtime.txt`。
+- 深色主题已恢复为平面样式：页面底 `#0C0C0C`、卡面 `#1C1C1E`、描边 `#2F2F33`；新安装默认深色，饮水页统计行的加号避让也有模拟器截图验证。真机目前仅采到底栏参考，其他页面的安全区域和视觉对照仍待补齐。
+- 删除操作已通过应用界面运行验证；API Key 跨重启读取已验证。关闭“安全记住”后的清除边界仍需单独验收。
+- HarmonyOS 模块/Ability 的英文模板描述已替换为 CalorieFit 中文文案；开发者身份、正式隐私政策和商店发布物料仍待确认。
+- 上架仍受未签名、隐私政策草案中的发布者/AI 接收方/未成年人信息待补、发布者资料待确认，以及 Mock/ComingSoon 功能范围未定等事项阻塞。首启同意和 AI 上传前告知已实现并通过模拟器验证。具体清单见[《NutriScan 复现交付说明》](交付说明_NutriScan复现.md) §11。
 
-设计方案与验收由 ChatGPT 提供：https://chatgpt.com/c/6ad30864-bca4-83ee-b1ad-ccdab3fc490b
+复现范围、实测依据和已知限制见[《NutriScan 复现交付说明》](交付说明_NutriScan复现.md)。本轮模拟器截图保存在 `work/nutriscan-ui-fidelity-20261019/evidence/`（本地工作证据）。

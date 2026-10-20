@@ -1,15 +1,14 @@
 /**
- * 今日页：热量进度环 + 摄入/消耗/预算数字 + 步数与运动时长卡片 + 快捷操作。
- * 剩余预算 = 饮食预算 − 已摄入；活动消耗单独显示，不返还饮食预算。
+ * 今日页：热量半环 + 摄入/剩余/目标 + 宏量条、餐食卡与活动概览。
+ * 剩余预算 = 饮食预算 − 已摄入；活动消耗不返还饮食预算。
  */
 
 import { DailySummaryService } from '../services/DailySummaryService';
 import { anim } from '../common/Motion';
 import { DailySummary } from '../models/DailySummary';
-import { CalorieRing } from '../components/CalorieRing';
+import { AnimatedRing } from '../components/AnimatedRing';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { MetricCard } from '../components/MetricCard';
-import { MacroPanel } from '../components/MacroBar';
 import { WeekSparkline } from '../components/WeekSparkline';
 import { MacroRepository, MacroDayTotal, DayPoint } from '../repositories/MacroRepository';
 import { FoodRepository } from '../repositories/FoodRepository';
@@ -19,11 +18,12 @@ import { MacroTarget } from '../models/Calculation';
 import { MEAL_LABELS } from '../common/Constants';
 import {
   color, fontSize, space, radius, layout,
-  glass, glassGradient, glassShadow, buttonGlow, toneVeil,
-  pageGradient, heroGradient, primaryButtonGradient
+  glass, glassShadow, buttonGlow, pageGradient, primaryButtonGradient
 } from '../common/DesignTokens';
-import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
+import { toDateKey, parseDateKey, formatNumber } from '../common/DateUtils';
 import { CalorieService } from '../services/CalorieService';
+import { Provenance } from '../services/MockContent';
+import { showComingSoon } from '../components/ComingSoonPage';
 
 @Component
 export struct HomePage {
@@ -32,6 +32,8 @@ export struct HomePage {
   @StorageLink('selectedDate') @Watch('reload') selectedDate: string = '';
   /** 页面内容入场开关，见 build() 末尾的 opacity/translate */
   @State private entered: boolean = false;
+  @State private hintIndex: number = 0;
+  private hintSwiperController: SwiperController = new SwiperController();
 
   enterPage(): void {
     this.entered = true;
@@ -116,12 +118,12 @@ export struct HomePage {
       new MealDetailParams(this.selectedDate, mealType));
   }
 
-  /** 轮播条文案。实测原版轮播指向 change_language / auto_logging 两个设置子页。 */
+  /** 只描述本地已支持的能力；本项目完全免费，不做任何试用或升级承诺。 */
   private tips(): string[] {
     return [
-      '💡 拍照识别只要 3 秒，不用手动称重',
-      '🎯 每餐先看蛋白，缺口用一杯酸奶补',
-      '💧 训练后 30 分钟内补水效果最好'
+      '拍照识别后可核对食物与营养估算',
+      '完善体征档案后计算每日营养目标',
+      '饮水与断食记录保存在本机'
     ];
   }
 
@@ -134,22 +136,6 @@ export struct HomePage {
     return toDateKey(monday);
   }
 
-  private showDatePicker(): void {
-    this.getUIContext().showDatePickerDialog({
-      start: new Date(2020, 0, 1),
-      end: new Date(2100, 11, 31),
-      selected: parseDateKey(this.selectedDate),
-      onDateAccept: (value: Date) => {
-        const key = toDateKey(value);
-        if (isFutureDate(key)) {
-          this.getUIContext().getPromptAction().showToast({ message: '不允许查看未来日期' });
-          return;
-        }
-        AppStorage.setOrCreate<string>('selectedDate', key);
-      }
-    });
-  }
-
   private goFoodEdit(): void {
     this.navStack.pushPathByName('FoodEdit', new FoodEditParams('add', this.selectedDate, -1));
   }
@@ -158,197 +144,363 @@ export struct HomePage {
     this.navStack.pushPathByName('ActivityEdit', new ActivityEditParams('add', this.selectedDate, -1));
   }
 
+  private consumedKcal(): number {
+    return this.summary !== null ? this.summary.consumedKcal : 0;
+  }
+
+  private budgetKcal(): number {
+    return this.summary !== null ? this.summary.dailyCalorieBudget : 1800;
+  }
+
+  private remainingOrOverKcal(): number {
+    return Math.abs(this.budgetKcal() - this.consumedKcal());
+  }
+
+  private calorieRatio(): number {
+    return Math.max(0, Math.min(1, this.consumedKcal() / Math.max(1, this.budgetKcal())));
+  }
+
+  private macroRatio(actual: number, target: number): string {
+    if (target <= 0) {
+      return '0%';
+    }
+    return `${Math.max(0, Math.min(100, Math.round(actual / target * 100)))}%`;
+  }
+
+  private macroFillColor(actual: number, target: number, tint: ResourceColor): ResourceColor {
+    return target > 0 && actual > target ? color.danger : tint;
+  }
+
+  private mealEmoji(mealType: number): string {
+    if (mealType === 0) {
+      return '🍳';
+    }
+    if (mealType === 1) {
+      return '🥗';
+    }
+    if (mealType === 2) {
+      return '🍲';
+    }
+    return '🍎';
+  }
+
+  private mealPreviewName(mealType: number): string {
+    const list = this.mealItems(mealType);
+    return list.length > 0 ? list[0].name : '还没记录';
+  }
+
+  @Builder
+  MacroMini(label: string, actual: number, target: number, tint: ResourceColor, available: boolean) {
+    Column({ space: space.xs }) {
+      Text(label)
+        .fontSize(fontSize.caption)
+        .fontColor(color.textSecondary)
+        .maxLines(1)
+
+      Stack({ alignContent: Alignment.Start }) {
+        Row()
+          .width('100%')
+          .height(4)
+          .borderRadius(2)
+          .backgroundColor(color.ringTrack)
+
+        Row()
+          .width(available ? this.macroRatio(actual, target) : '0%')
+          .height(4)
+          .borderRadius(2)
+          .backgroundColor(this.macroFillColor(actual, target, tint))
+      }
+      .width('100%')
+      .height(4)
+
+      Text(available ? `${Math.round(actual)}g / ${Math.round(target)}g` : '— / —')
+        .fontSize(fontSize.caption)
+        .fontColor(color.text)
+        .maxLines(1)
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  HintGlyph(index: number) {
+    Stack({ alignContent: Alignment.Center }) {
+      Row()
+        .width(28)
+        .height(28)
+        .backgroundColor(color.surfaceMuted)
+        .borderRadius(9)
+
+      if (index === 0) {
+        SymbolGlyph($r('sys.symbol.camera'))
+          .fontSize(18)
+          .fontColor([color.primary])
+      } else if (index === 1) {
+        SymbolGlyph($r('sys.symbol.person'))
+          .fontSize(18)
+          .fontColor([color.primary])
+      } else {
+        SymbolGlyph($r('sys.symbol.drop'))
+          .fontSize(18)
+          .fontColor([color.primary])
+      }
+    }
+    .width(28)
+    .height(28)
+  }
+
+  @Builder
+  HintSlide(tip: string, index: number) {
+    Row({ space: space.sm }) {
+      this.HintGlyph(index)
+
+      Text(tip)
+        .fontSize(fontSize.secondary)
+        .fontColor(color.text)
+        .maxLines(2)
+        .layoutWeight(1)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(18)
+        .fontColor([color.textHint])
+    }
+    .width('100%')
+    .height(52)
+    .padding({ left: 14, right: 14 })
+    .backgroundColor(color.surface)
+    .border({ width: 1, color: color.border })
+    .borderRadius(16)
+  }
+
   build() {
     Scroll() {
       Column({ space: space.md }) {
-        // 顶部：日期 + 切换
-        Row() {
-          Text(displayDate(this.selectedDate))
-            .fontSize(fontSize.pageTitle)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(color.text)
-            .layoutWeight(1)
-          Button('切换日期')
-            .height(36)
-            .fontSize(fontSize.secondary)
-            .fontColor(color.primary)
-            .backgroundColor(color.primaryLight)
+        // 对齐 NutriScan 的 Today's Count：薄荷色半环、三项热量和同卡宏量进度。
+        Column({ space: space.sm }) {
+          Row() {
+            Text('今日热量')
+              .fontSize(fontSize.sectionTitle)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(color.text)
+              .layoutWeight(1)
+
+            Row({ space: 6 }) {
+              Text('⚙︎')
+                .fontSize(fontSize.secondary)
+                .fontColor(color.textHint)
+              Text('自定义')
+                .fontSize(fontSize.secondary)
+                .fontColor(color.textSecondary)
+            }
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
             .borderRadius(radius.pill)
             .onClick(() => {
-              this.showDatePicker();
+              showComingSoon(
+                '自定义首页',
+                '选择综合页摘要卡片的显示内容与顺序',
+                '当前版本还没有首页布局配置与本地保存能力。',
+                '可调整卡片的布局模型、持久化设置、恢复默认操作和设置回归',
+                Provenance.MOCK
+              );
             })
-        }
-        .width('100%')
+          }
+          .width('100%')
 
-        // 主视觉卡：整页唯一的高饱和色块。
-        // 原型里的「居中大图」在这个 App 里没有对应物 —— 热量环本身就是主图，
-        // 所以让它占据卡片正中，其余信息退到上下两行。
-        // 文字一律用白：这张卡在浅色主题下也是深色饱和底，白字两种主题都成立。
-        Column({ space: space.lg }) {
-          Text('今日热量预算')
-            .fontSize(fontSize.secondary)
-            .fontColor('#CCFFFFFF')
+          Stack({ alignContent: Alignment.Top }) {
+            AnimatedRing({
+              // ProgressRing draws 0..360°; half the ratio fills a 180° gauge.
+              ratio: this.calorieRatio() * 0.5,
+              diameter: 128,
+              stroke: 8,
+              valueColor: this.consumedKcal() > this.budgetKcal() ? color.danger : color.calorieMint,
+              trackColor: color.heroRingTrack
+            })
+              .width(128)
+              .height(128)
+              .rotate({ angle: 270 })
+              .align(Alignment.Top)
 
-          CalorieRing({
-            consumed: this.summary !== null ? this.summary.consumedKcal : 0,
-            budget: this.summary !== null ? this.summary.dailyCalorieBudget : 1800,
-            onHero: true
-          })
+            Row()
+              .width('100%')
+              .height(54)
+              .backgroundColor(color.surface)
+              // The UI tree placed this child at the Stack top despite .align(Bottom).
+              // Offset it to the lower edge to reveal the reference's upper arc.
+              .offset({ x: 0, y: 64 })
 
           Row() {
             Column({ space: 4 }) {
               AnimatedNumber({
-                target: this.summary !== null ? this.summary.consumedKcal : 0,
+                target: this.remainingOrOverKcal(),
                 textSize: fontSize.metric,
-                textColor: '#FFFFFF'
+                textColor: this.consumedKcal() > this.budgetKcal() ? color.danger : color.text
+              })
+              Text(this.consumedKcal() > this.budgetKcal() ? '超出 kcal' : '剩余 kcal')
+                .fontSize(fontSize.caption)
+                .fontColor(color.textSecondary)
+            }
+            .alignItems(HorizontalAlign.Center)
+            .layoutWeight(1)
+
+            Column({ space: 4 }) {
+              AnimatedNumber({
+                target: this.consumedKcal(),
+                textSize: fontSize.metric,
+                textColor: color.text
               })
               Text('已摄入 kcal')
                 .fontSize(fontSize.caption)
-                .fontColor('#B3FFFFFF')
+                .fontColor(color.textSecondary)
             }
             .alignItems(HorizontalAlign.Center)
             .layoutWeight(1)
 
             Column({ space: 4 }) {
               AnimatedNumber({
-                target: this.summary !== null ? this.summary.burnedKcal : 0,
+                target: this.budgetKcal(),
                 textSize: fontSize.metric,
-                textColor: '#FFFFFF'
+                textColor: color.text
               })
-              Text('活动消耗 kcal')
+              Text('目标 kcal')
                 .fontSize(fontSize.caption)
-                .fontColor('#B3FFFFFF')
-            }
-            .alignItems(HorizontalAlign.Center)
-            .layoutWeight(1)
-
-            Column({ space: 4 }) {
-              AnimatedNumber({
-                target: this.summary !== null ? this.summary.dailyCalorieBudget : 1800,
-                textSize: fontSize.metric,
-                textColor: '#FFFFFF'
-              })
-              Text('饮食预算 kcal')
-                .fontSize(fontSize.caption)
-                .fontColor('#B3FFFFFF')
+                .fontColor(color.textSecondary)
             }
             .alignItems(HorizontalAlign.Center)
             .layoutWeight(1)
           }
           .width('100%')
+          .height(54)
+          // Center the calorie labels inside the half-ring instead of above it.
+          .offset({ x: 0, y: 28 })
+        }
+        .width('100%')
+        .height(96)
+        .clip(true)
+
+        Row({ space: space.md }) {
+          this.MacroMini('蛋白质', this.macroDay !== null ? this.macroDay.actual.proteinG : 0,
+            this.macroTarget !== null ? this.macroTarget.proteinG : 0, color.macroProtein,
+            this.macroDay !== null && this.macroTarget !== null)
+          this.MacroMini('碳水', this.macroDay !== null ? this.macroDay.actual.carbsG : 0,
+            this.macroTarget !== null ? this.macroTarget.carbsG : 0, color.macroCarbs,
+            this.macroDay !== null && this.macroTarget !== null)
+          this.MacroMini('脂肪', this.macroDay !== null ? this.macroDay.actual.fatG : 0,
+            this.macroTarget !== null ? this.macroTarget.fatG : 0, color.macroFat,
+            this.macroDay !== null && this.macroTarget !== null)
+        }
+        .width('100%')
+
+        if (this.macroTarget === null) {
+          Text('完善体征资料后显示宏量目标')
+            .fontSize(fontSize.caption)
+            .fontColor(color.textHint)
+            .width('100%')
+        } else if (this.macroDay !== null && !this.macroDay.hasMacroData) {
+          Text('今天的餐食尚无宏量记录')
+            .fontSize(fontSize.caption)
+            .fontColor(color.textHint)
+            .width('100%')
+        }
         }
         .padding(layout.cardPadding)
-        .linearGradient(heroGradient())
+        .backgroundColor(color.surface)
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .shadow(glassShadow(glass.shadowRadius + 6, glass.shadowOffsetY + 4))
         .alignItems(HorizontalAlign.Center)
         .width('100%')
 
-        /**
-         * AI 拍照识别入口。
-         *
-         * 底 Tab 从 4 个换成 5 个之后，这个入口一度被埋进「我的 → 全部餐食」，
-         * 而拍照识别恰恰是原版最核心的动作 —— 原版 Home 的悬浮加号点开的就是它。
-         * 所以把它放回综合页顶部，放在所有数据卡之前：
-         * 用户打开 App 第一眼该看到的是「怎么记」，不是「已经记了多少」。
-         */
-        Column() {
-          Row() {
-            Text('📷')
-              .fontSize(28)
-            Column({ space: 2 }) {
-              Text('拍照识别食物')
-                .fontSize(fontSize.body)
-                .fontWeight(FontWeight.Medium)
-                // 这张卡压在 heroGradient() 上，必须用白字系 ——
-                // 之前跟 color.text / color.textHint 走，浅色主题下是
-                // 深绿压蓝紫，几乎读不出来。
-                .fontColor('#FFFFFF')
-              Text('拍一张，AI 估算整份热量与宏量')
-                .fontSize(fontSize.caption)
-                .fontColor('#B3FFFFFF')
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            Text('开始')
-              .fontSize(fontSize.caption)
-              .fontColor(color.onPrimary)
-              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-              .backgroundColor(color.primary)
-              .borderRadius(radius.pill)
-          }
-          .width('100%')
-        }
-        .padding(layout.cardPadding)
-        .linearGradient(heroGradient())
-        .borderRadius(glass.cardRadius)
-        .border({ width: glass.borderWidth, color: color.glassBorder })
-        .shadow(glassShadow(glass.shadowRadius + 4, glass.shadowOffsetY))
-        .onClick(() => {
-          this.navStack.pushPathByName('AiRecognition',
-            new AiRecognitionNavParams(this.selectedDate));
-        })
-
-        // 轮播条 —— 对应原版 Home 的横向提示轮播
-        Scroll() {
-          Row({ space: space.sm }) {
-            ForEach(this.tips(), (tip: string) => {
-              Text(tip)
-                .fontSize(fontSize.secondary)
-                .fontColor(color.text)
-                .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-                .backgroundColor(color.glassFill)
-                .borderRadius(radius.pill)
-                .border({ width: 1, color: color.glassBorder })
-            }, (tip: string) => tip)
-          }
+        // 单卡横向翻页 + 页点，对齐 NutriScan 首页提示卡结构。
+        Swiper(this.hintSwiperController) {
+          ForEach(this.tips(), (tip: string, index: number) => {
+            this.HintSlide(tip, index)
+          }, (tip: string, index: number) => `${index}-${tip}`)
         }
         .width('100%')
-        .scrollable(ScrollDirection.Horizontal)
-        .scrollBar(BarState.Off)
+        .height(52)
+        .indicator(false)
+        .autoPlay(false)
+        .loop(false)
+        .onChange((index: number) => {
+          this.hintIndex = index;
+        })
+
+        Row({ space: 8 }) {
+          ForEach(this.tips(), (_tip: string, index: number) => {
+            Circle()
+              .width(this.hintIndex === index ? 8 : 6)
+              .height(this.hintIndex === index ? 8 : 6)
+              .fill(this.hintIndex === index ? color.textSecondary : color.glassBorder)
+              .onClick(() => {
+                this.hintSwiperController.changeIndex(index, true);
+              })
+          }, (_tip: string, index: number) => index.toString())
+        }
+        .width('100%')
+        .height(12)
+        .justifyContent(FlexAlign.Center)
         .margin({ bottom: space.xs })
 
-        // 餐食卡片流 —— 对应原版「餐食卡片 ──> 餐食详情」
+        // 横向餐食卡：只展示真实录入的名称与热量，不伪造原版截图中的食物照片。
         Column({ space: space.sm }) {
-          Text('今日餐食')
-            .fontSize(fontSize.sectionTitle)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(color.text)
-            .width('100%')
-
-          ForEach(MEAL_LABELS, (label: string, index: number) => {
-            Row() {
-              Column({ space: 2 }) {
-                Text(label)
-                  .fontSize(fontSize.body)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(color.text)
-                Text(this.mealItems(index).length === 0
-                  ? '还没记录'
-                  : `${this.mealItems(index).length} 项 · ${formatNumber(this.mealKcal(index))} kcal`)
-                  .fontSize(fontSize.caption)
-                  .fontColor(color.textHint)
-              }
-              .alignItems(HorizontalAlign.Start)
+          Row() {
+            Text('今日餐食')
+              .fontSize(fontSize.sectionTitle)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(color.text)
               .layoutWeight(1)
 
-              Text(this.mealItems(index).length === 0 ? '＋' : '›')
-                .fontSize(fontSize.sectionTitle)
-                .fontColor(color.textHint)
+            Text('拍照识别食物  ›')
+              .fontSize(fontSize.caption)
+              .fontColor(color.primary)
+              .onClick(() => {
+                this.navStack.pushPathByName('AiRecognition',
+                  new AiRecognitionNavParams(this.selectedDate));
+              })
+          }
+          .width('100%')
+
+          Scroll() {
+            Row({ space: space.md }) {
+              ForEach(MEAL_LABELS, (label: string, index: number) => {
+                Column({ space: space.xs }) {
+                  Column({ space: space.sm }) {
+                    Text(this.mealEmoji(index))
+                      .fontSize(34)
+                    Text(this.mealItems(index).length === 0
+                      ? '还没记录'
+                      : this.mealPreviewName(index))
+                      .fontSize(fontSize.body)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(color.text)
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .width(140)
+                  .height(140)
+                  .padding(layout.cardPadding)
+                  .backgroundColor(color.surfaceMuted)
+                  .borderRadius(glass.cardRadius)
+                  .alignItems(HorizontalAlign.Start)
+                  .justifyContent(FlexAlign.Center)
+
+                  Text(`${label} · ${this.mealItems(index).length === 0
+                    ? '点击添加'
+                    : `${this.mealItems(index).length} 项 · ${formatNumber(this.mealKcal(index))} kcal`}`)
+                    .fontSize(fontSize.caption)
+                    .fontColor(color.textSecondary)
+                    .maxLines(1)
+                }
+                .width(140)
+                .onClick(() => {
+                  this.goMealDetail(index);
+                })
+              }, (label: string, index: number) => label + index)
             }
-            .width('100%')
-            .padding(layout.cardPadding)
-            .linearGradient(glassGradient(toneVeil(label)))
-            .borderRadius(glass.cardRadius)
-            .border({ width: glass.borderWidth, color: color.glassBorder })
-            .backdropBlur(glass.blurRadius)
-            .alignItems(VerticalAlign.Center)
-            .onClick(() => {
-              this.goMealDetail(index);
-            })
-          }, (label: string, index: number) => label + index)
+          }
+          .width('100%')
+          .height(150)
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
         }
         .width('100%')
 
@@ -363,6 +515,7 @@ export struct HomePage {
                 this.summary !== null ? this.summary.steps : 0,
                 this.summary !== null ? this.summary.stepsGoal : 8000),
               barColor: color.activity,
+              sourceLabel: '手动模拟',
               goalText: `目标 ${formatNumber(this.summary !== null ? this.summary.stepsGoal : 8000)} 步`
             })
           }
@@ -421,45 +574,6 @@ export struct HomePage {
           selectedDate: this.selectedDate
         })
 
-        // 宏量营养素：仅在已设置体征（目标可推导）时显示
-        if (this.macroTarget !== null && this.macroDay !== null) {
-          MacroPanel({
-            actualProtein: this.macroDay.actual.proteinG,
-            actualCarbs: this.macroDay.actual.carbsG,
-            actualFat: this.macroDay.actual.fatG,
-            targetProtein: this.macroTarget.proteinG,
-            targetCarbs: this.macroTarget.carbsG,
-            targetFat: this.macroTarget.fatG
-          })
-
-          if (!this.macroDay.hasMacroData) {
-            Text('今天的记录还没有宏量数据，去「饮食」页补录或用 AI 拍照识别')
-              .fontSize(fontSize.caption)
-              .fontColor(color.textHint)
-              .width('100%')
-          }
-        } else {
-          // 未设体征时给出明确引导，而不是静默隐藏
-          Column({ space: 6 }) {
-            Text('设置体征，自动算出你的热量与宏量目标')
-              .fontSize(fontSize.body)
-              .fontColor(color.text)
-            Text('体重、身高、年龄、活动量 → BMR/TDEE → 每日目标')
-              .fontSize(fontSize.caption)
-              .fontColor(color.textHint)
-          }
-          .width('100%')
-          .padding(layout.cardPadding)
-          .linearGradient({
-            angle: 160,
-            colors: [[toneVeil('onboard'), 0], [color.glassFillStrong, 1]]
-          })
-          .borderRadius(glass.cardRadius)
-          .border({ width: glass.borderWidth, color: color.glassBorder })
-          .backdropBlur(glass.blurRadius)
-          .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
-          .alignItems(HorizontalAlign.Start)
-        }
       }
       .padding(layout.pagePadding)
       .constraintSize({ minHeight: '100%' })

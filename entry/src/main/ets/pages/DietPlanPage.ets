@@ -102,7 +102,6 @@ export struct DietPlanPage {
         .linearGradient(glassGradient(toneVeil(d.dateLabel)))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .alignItems(HorizontalAlign.Start)
       }, (d: DayPlan) => d.dateLabel)
 
@@ -154,7 +153,6 @@ export struct DietPlanPage {
     .linearGradient(glassGradient(toneVeil('grocery')))
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -204,7 +202,6 @@ export struct DietPlanPage {
     .linearGradient(glassGradient(toneVeil('supplements')))
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -230,7 +227,6 @@ export struct DietPlanPage {
         .linearGradient(glassGradient(toneVeil(l.id)))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
       }, (l: LifestyleItem) => l.id)
 
       Text('实测依据：分类名「Lifestyle & Feelings」与文案「We\'ll suggest meals that match your lifestyle, routine, and food habits.」；条目内容为示例。')

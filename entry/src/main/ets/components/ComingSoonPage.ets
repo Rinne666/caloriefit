@@ -152,7 +152,6 @@ export struct ComingSoonPage {
           .linearGradient(glassGradient(toneVeil(this.routeName)))
           .borderRadius(glass.cardRadius)
           .border({ width: glass.borderWidth, color: color.glassBorder })
-          .backdropBlur(glass.blurRadius)
           .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
           .alignItems(HorizontalAlign.Start)
 

@@ -1,5 +1,5 @@
 /**
- * 饮水 Water —— 对应 NutriScan 首页子页（综合 / 社群 / 饮水 / 断食 之一）
+ * 饮水 Water —— 今日页的个人饮水记录子页
  *
  * 布局按真机截图 1:1 还原的要素：
  *   左侧水瓶（水位随进度上涨） · 右上 "% completed" 用青色
@@ -20,8 +20,8 @@ import { WATER_QUICK_ML, waterTargetMl, WATER_ML_PER_KG, Provenance } from '../s
 import { toDateKey, parseDateKey, formatNumber } from '../common/DateUtils';
 
 const WEEK_LABELS: string[] = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const BOTTLE_W: number = 88;
-const BOTTLE_H: number = 150;
+const BOTTLE_W: number = 72;
+const BOTTLE_H: number = 128;
 
 @Component
 export struct WaterPage {
@@ -53,7 +53,7 @@ export struct WaterPage {
       // effectiveTarget(0) 在无手动值时返回 0，这里用体重兜底
       if (!(this.targetMl > 0)) {
         const profile = await ProfileRepository.getBodyProfile();
-        this.autoTarget = waterTargetMl(profile.weightKg);
+        this.autoTarget = profile.weightKg > 0 ? waterTargetMl(profile.weightKg) : 0;
         this.targetMl = this.autoTarget;
       } else {
         this.autoTarget = this.targetMl;
@@ -161,7 +161,7 @@ export struct WaterPage {
   private editTarget(): void {
     this.getUIContext().showTextPickerDialog({
       range: this.suggestTargets(),
-      value: `${this.targetMl}`,
+      value: `${this.targetMl > 0 ? this.targetMl : 2000}`,
       onAccept: (value: TextPickerResult) => {
         // TextPickerResult.value 的类型是 string | string[]：
         // 单列选择器回 string，多列模式回数组。这里收窄成单值再解析，
@@ -190,9 +190,13 @@ export struct WaterPage {
   build() {
     Scroll() {
       Column({ space: space.md }) {
-        // 水瓶 + 右侧数字
-        Row({ space: space.md }) {
-          this.Bottle()
+        // 水瓶占左侧 42%，指标靠右对齐，复现原版横向分区。
+        Row() {
+          Column() {
+            this.Bottle()
+          }
+          .width('42%')
+          .alignItems(HorizontalAlign.Center)
 
           Column({ space: space.xs }) {
             Row({ space: space.xxs }) {
@@ -204,17 +208,23 @@ export struct WaterPage {
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
             }
+            .width('100%')
+            .justifyContent(FlexAlign.End)
 
             Row({ space: space.xxs }) {
-              Text(`目标 ${formatNumber(this.targetMl)} ml`)
+              Text(this.targetMl > 0 ? `目标 ${formatNumber(this.targetMl)} ml` : '未设置饮水目标')
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
-              Text('✏️')
-                .fontSize(fontSize.secondary)
+              Image($r('app.media.water_pencil'))
+                .width(16)
+                .height(16)
+                .fillColor(color.text)
                 .onClick(() => {
                   this.editTarget();
                 })
             }
+            .width('100%')
+            .justifyContent(FlexAlign.End)
 
             Row({ space: 2 }) {
               Text(`${formatNumber(this.totalMl)}`)
@@ -226,9 +236,11 @@ export struct WaterPage {
                 .fontColor(color.textHint)
                 .margin({ bottom: 8 })
             }
+            .width('100%')
+            .justifyContent(FlexAlign.End)
           }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
+          .width('58%')
+          .alignItems(HorizontalAlign.End)
         }
         .width('100%')
 
@@ -290,42 +302,71 @@ export struct WaterPage {
             })
           }, (ml: number) => ml.toString())
 
-          Column() {
-            Text('💧')
-              .fontSize(20)
-            Text('+')
-              .fontSize(fontSize.secondary)
-              .fontColor(color.textHint)
+          Stack({ alignContent: Alignment.Center }) {
+            SymbolGlyph($r('sys.symbol.drop'))
+              .fontSize(24)
+              .fontColor([color.text])
+
+            Stack({ alignContent: Alignment.Center }) {
+              Circle()
+                .width(16)
+                .height(16)
+                .fill(color.text)
+              Text('+')
+                .fontSize(12)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(color.bg)
+            }
+            .width(16)
+            .height(16)
+            .offset({ x: 12, y: 12 })
           }
           .width(64)
           .height(64)
-          .justifyContent(FlexAlign.Center)
           .backgroundColor(color.glassFill)
           .borderRadius(32)
           .border({ width: 1, color: color.glassBorder })
           .onClick(() => {
             this.addWater(100);
           })
+
+          Column() {
+            Text('撤销')
+              .fontSize(fontSize.caption)
+              .fontColor(color.danger)
+          }
+          .width(48)
+          .height(64)
+          .justifyContent(FlexAlign.Center)
+          .onClick(() => {
+            this.undo();
+          })
         }
         .width('100%')
 
+        Text('本周')
+          .fontSize(fontSize.sectionTitle)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(color.text)
+          .width('100%')
+
         // This Week
         Column({ space: space.sm }) {
-          Text('本周')
-            .fontSize(fontSize.sectionTitle)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(color.text)
-            .width('100%')
-
           Row() {
             Column({ space: 2 }) {
               Text(`${this.streak()}`)
                 .fontSize(fontSize.metric)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(color.text)
-              Text('🔥 连续达标')
-                .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+              Row({ space: 6 }) {
+                Image($r('app.media.water_flame'))
+                  .width(16)
+                  .height(16)
+                  .fillColor(color.streakOrange)
+                Text('连续达标')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+              }
             }
             .layoutWeight(1)
 
@@ -334,9 +375,30 @@ export struct WaterPage {
                 .fontSize(fontSize.metric)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(color.text)
-              Text('📊 日均 ml')
-                .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+              Row({ space: 6 }) {
+                Row({ space: 2 }) {
+                  Column()
+                    .width(3)
+                    .height(6)
+                    .backgroundColor(color.waterAccent)
+                    .borderRadius(2)
+                  Column()
+                    .width(3)
+                    .height(11)
+                    .backgroundColor(color.waterAccent)
+                    .borderRadius(2)
+                  Column()
+                    .width(3)
+                    .height(16)
+                    .backgroundColor(color.waterAccent)
+                    .borderRadius(2)
+                }
+                .height(16)
+                .alignItems(VerticalAlign.Bottom)
+                Text('日均 ml')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+              }
             }
             .layoutWeight(1)
           }
@@ -376,7 +438,6 @@ export struct WaterPage {
         .linearGradient(glassGradient(toneVeil('water-week')))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
 
@@ -384,18 +445,12 @@ export struct WaterPage {
         Row() {
           Text(this.manualTarget
             ? '目标已手动设置'
-            : `目标按体重 × ${WATER_ML_PER_KG}ml 自动推导（推断）`)
+            : this.autoTarget > 0
+              ? `目标按体重 × ${WATER_ML_PER_KG}ml 自动推导（推断）`
+              : '请填写身体档案或手动设置目标')
             .fontSize(fontSize.caption)
             .fontColor(color.textHint)
             .layoutWeight(1)
-
-          Text('撤销')
-            .fontSize(fontSize.caption)
-            .fontColor(color.danger)
-            .padding({ left: 12, right: 4 })
-            .onClick(() => {
-              this.undo();
-            })
         }
         .width('100%')
       }

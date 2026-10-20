@@ -23,6 +23,7 @@ import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivit
 import { YouEntry, Provenance } from '../services/MockContent';
 import { setComingSoon, ComingSoonPage } from '../components/ComingSoonPage';
 import { OnboardingPage } from './OnboardingPage';
+import { PersonalDataService } from '../services/PersonalDataService';
 
 /**
  * 「我的」二级入口清单。
@@ -114,14 +115,14 @@ export struct ProfilePage {
   @State activityKcalGoalInput: string = '300';
 
   /* 体征档案 */
-  @State weightInput: string = '65';
-  @State heightInput: string = '170';
-  @State ageInput: string = '30';
+  @State weightInput: string = '';
+  @State heightInput: string = '';
+  @State ageInput: string = '';
   /** 体脂率留空表示未知 → 引擎自动回退 Mifflin-St Jeor */
   @State bodyFatInput: string = '';
-  @State sexIndex: number = 0;
-  @State activityIndex: number = 2;
-  @State goalIndex: number = 0;
+  @State sexIndex: number = -1;
+  @State activityIndex: number = -1;
+  @State goalIndex: number = -1;
   /** 实时预览：随输入变化 */
   @State previewTarget: number = 0;
   @State previewBmr: number = 0;
@@ -173,16 +174,16 @@ export struct ProfilePage {
   private async loadBodyProfile(): Promise<void> {
     try {
       const p = await ProfileRepository.getBodyProfile();
-      this.weightInput = String(p.weightKg);
-      this.heightInput = String(p.heightCm);
-      this.ageInput = String(p.ageYears);
+      this.weightInput = p.weightKg > 0 ? String(p.weightKg) : '';
+      this.heightInput = p.heightCm > 0 ? String(p.heightCm) : '';
+      this.ageInput = p.ageYears > 0 ? String(p.ageYears) : '';
       this.bodyFatInput = p.bodyFatRatio === null ? '' : (p.bodyFatRatio * 100).toFixed(1);
       this.sexIndex = ProfilePage.SEX_ORDER.indexOf(p.sex) >= 0
-        ? ProfilePage.SEX_ORDER.indexOf(p.sex) : 0;
+        ? ProfilePage.SEX_ORDER.indexOf(p.sex) : -1;
       this.activityIndex = ProfilePage.ACTIVITY_ORDER.indexOf(p.activity) >= 0
-        ? ProfilePage.ACTIVITY_ORDER.indexOf(p.activity) : 2;
+        ? ProfilePage.ACTIVITY_ORDER.indexOf(p.activity) : -1;
       this.goalIndex = ProfilePage.GOAL_ORDER.indexOf(p.mode) >= 0
-        ? ProfilePage.GOAL_ORDER.indexOf(p.mode) : 0;
+        ? ProfilePage.GOAL_ORDER.indexOf(p.mode) : -1;
       this.recalcPreview();
     } catch (e) {
       // 保持默认值
@@ -194,7 +195,8 @@ export struct ProfilePage {
     const w = parseFloat(this.weightInput);
     const h = parseFloat(this.heightInput);
     const a = parseFloat(this.ageInput);
-    if (!(w > 0) || !(h > 0) || !(a > 0)) {
+    if (!(w > 0) || !(h > 0) || !(a > 0) || this.sexIndex < 0 ||
+      this.activityIndex < 0 || this.goalIndex < 0) {
       this.previewBmr = 0;
       this.previewTdee = 0;
       this.previewTarget = 0;
@@ -231,6 +233,10 @@ export struct ProfilePage {
     const a = parseFloat(this.ageInput);
     if (!(w > 0) || !(h > 0) || !(a > 0)) {
       this.getUIContext().getPromptAction().showToast({ message: '请填写有效的体重、身高和年龄' });
+      return;
+    }
+    if (this.sexIndex < 0 || this.activityIndex < 0 || this.goalIndex < 0) {
+      this.getUIContext().getPromptAction().showToast({ message: '请完成性别、活动量和目标选择' });
       return;
     }
     const bfText = this.bodyFatInput.trim();
@@ -331,7 +337,7 @@ export struct ProfilePage {
   private confirmClear(): void {
     this.getUIContext().showAlertDialog({
       title: '清空全部记录',
-      message: '将删除所有日期的饮食、运动和步数记录，目标设置保留。此操作不可撤销。',
+      message: '将删除所有日期的饮食、运动、步数、饮水和断食记录；身体档案与目标设置保留。此操作不可撤销。',
       primaryButton: {
         value: '取消',
         action: () => {
@@ -354,6 +360,48 @@ export struct ProfilePage {
       this.getUIContext().getPromptAction().showToast({ message: '已清空全部记录' });
     } catch (e) {
       this.getUIContext().getPromptAction().showToast({ message: '清空失败，请重试' });
+    }
+  }
+
+  private confirmDeleteLocalData(): void {
+    this.getUIContext().showAlertDialog({
+      title: '删除健康数据和 AI 配置',
+      message: '将删除身体档案、目标设置、饮食/运动/步数/饮水/断食记录、未完成的引导选择、AI 接口配置和 API Key，并撤回健康信息处理同意。外观偏好保留。此操作不可撤销。',
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: color.danger,
+        action: () => {
+          this.doDeleteLocalData();
+        }
+      }
+    });
+  }
+
+  private async doDeleteLocalData(): Promise<void> {
+    const host = this.getUIContext().getHostContext();
+    const failures: string[] = await PersonalDataService.deleteAllLocalData(
+      host === undefined ? undefined : host as common.UIAbilityContext
+    );
+    try {
+      const settings = await SettingsRepository.getSettings();
+      AppStorage.setOrCreate<AppSettings>('appSettings', settings);
+      await this.loadSettings();
+      await this.loadBodyProfile();
+    } catch (e) {
+      failures.push('页面状态更新');
+    }
+    this.bumpRefresh();
+    if (failures.length === 0) {
+      this.getUIContext().getPromptAction().showToast({ message: '数据已删除并撤回同意；继续使用需重新确认' });
+    } else {
+      this.getUIContext().getPromptAction().showToast({
+        message: `部分数据未能删除：${failures.join('、')}，请重试`
+      });
     }
   }
 
@@ -402,7 +450,7 @@ export struct ProfilePage {
           }
           .width('100%')
 
-          Text('V4 配色：高饱和氛围渐变打底，卡片为半透明玻璃层。品牌色 #D5EE6E 沿用 NutriScan 真机实测值')
+          Text('深色主题沿用 NutriScan 实测色板（#0C0C0C / #1C1C1E / #2F2F33）；品牌色 #D5EE6E 也来自真机实测。')
             .fontSize(fontSize.caption)
             .fontColor(color.textHint)
             .width('100%')
@@ -411,7 +459,6 @@ export struct ProfilePage {
         .linearGradient(glassGradient(color.glassFill))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
         .width('100%')
@@ -653,7 +700,6 @@ export struct ProfilePage {
         .linearGradient(glassGradient(color.glassFill))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
         .width('100%')
@@ -748,7 +794,6 @@ export struct ProfilePage {
         .linearGradient(glassGradient(color.glassFill))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
 
@@ -828,7 +873,6 @@ export struct ProfilePage {
         .linearGradient(glassGradient(toneVeil('you-entries')))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
 
@@ -847,7 +891,27 @@ export struct ProfilePage {
         .linearGradient(glassGradient(color.glassFill))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
+        .width('100%')
+
+        // 版本与授权
+        Column({ space: space.xs }) {
+          Text('版本与授权')
+            .fontSize(fontSize.sectionTitle)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(color.text)
+          Text('CalorieFit 完全免费：无应用内购买、无订阅、无付费墙，所有已实现功能默认全部开放。')
+            .fontSize(fontSize.body)
+            .fontColor(color.textSecondary)
+          Text('AI 食物识别使用你自己的 API Key，调用额度与费用由你的模型服务商决定，与本应用无关。')
+            .fontSize(fontSize.caption)
+            .fontColor(color.textHint)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .padding(layout.cardPadding)
+        .linearGradient(glassGradient(color.glassFill))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
 
@@ -875,7 +939,6 @@ export struct ProfilePage {
         .linearGradient(glassGradient(color.glassFill))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
         .onClick(() => {
@@ -892,6 +955,33 @@ export struct ProfilePage {
           .borderRadius(radius.large)
           .onClick(() => {
             this.confirmClear();
+          })
+
+        Text('删除本机健康档案、记录、AI 配置和 API Key，并撤回健康信息处理同意。')
+          .fontSize(fontSize.caption)
+          .fontColor(color.textHint)
+          .width('100%')
+
+        Button('查看隐私政策')
+          .width('100%')
+          .height(layout.buttonHeight)
+          .fontSize(fontSize.body)
+          .fontColor(color.primary)
+          .backgroundColor(color.primaryLight)
+          .borderRadius(radius.large)
+          .onClick(() => {
+            this.navStack.pushPathByName('PrivacyPolicy', new Object());
+          })
+
+        Button('删除数据并撤回同意')
+          .width('100%')
+          .height(layout.buttonHeight)
+          .fontSize(fontSize.body)
+          .fontColor(color.danger)
+          .backgroundColor(color.dangerLight)
+          .borderRadius(radius.large)
+          .onClick(() => {
+            this.confirmDeleteLocalData();
           })
       }
       .padding(layout.pagePadding)

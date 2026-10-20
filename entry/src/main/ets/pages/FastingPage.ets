@@ -1,5 +1,5 @@
 /**
- * 断食 Fasting —— 对应 NutriScan 首页子页（综合 / 社群 / 饮水 / 断食 之一）
+ * 断食 Fasting —— 今日页的个人断食记录子页
  *
  * 实测依据：方案名 16:8 / 18:6 / 20:4 / 14:10 / 12:12 与自定义窗口，
  * 日志有「16:8 fast complete」。
@@ -13,8 +13,8 @@
 import { color, fontSize, space, radius, layout, glass, glassGradient, glassShadow, toneVeil } from '../common/DesignTokens';
 import { anim } from '../common/Motion';
 import { FastingRepository, ActiveFasting } from '../repositories/FastingRepository';
-import { FASTING_PLANS, FastingPlan, Provenance, provenanceLabel } from '../services/MockContent';
-import { toDateKey, parseDateKey } from '../common/DateUtils';
+import { AnimatedRing } from '../components/AnimatedRing';
+import { FASTING_PLANS, FastingPlan, provenanceLabel } from '../services/MockContent';
 
 @Component
 export struct FastingPage {
@@ -22,6 +22,7 @@ export struct FastingPage {
   @State private active: ActiveFasting | null = null;
   @State private nowMs: number = Date.now();
   @State private filled: boolean = false;
+  @State private showPlans: boolean = false;
 
   private timer: number = -1;
 
@@ -161,10 +162,26 @@ export struct FastingPage {
               .fontWeight(FontWeight.Bold)
               .fontColor(color.text)
 
-            Text(this.remainingText())
-              .fontSize(40)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(color.primary)
+            Stack({ alignContent: Alignment.Center }) {
+              AnimatedRing({
+                ratio: this.progress(),
+                diameter: 204,
+                stroke: 12,
+                valueColor: color.primary,
+                trackColor: color.ringTrack
+              })
+              Column({ space: space.xs }) {
+                Text(this.remainingText())
+                  .fontSize(34)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(color.text)
+                Text('剩余时间')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textSecondary)
+              }
+            }
+            .width('100%')
+            .height(220)
 
             Text(`已坚持 ${this.elapsedText()}`)
               .fontSize(fontSize.secondary)
@@ -213,59 +230,161 @@ export struct FastingPage {
           .linearGradient(glassGradient(toneVeil('fasting-active')))
           .borderRadius(glass.cardRadius)
           .border({ width: glass.borderWidth, color: color.glassBorder })
-          .backdropBlur(glass.blurRadius)
           .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
           .alignItems(HorizontalAlign.Start)
         }
 
-        Text('选择断食方案')
-          .fontSize(fontSize.sectionTitle)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(color.text)
-          .width('100%')
+        if (this.active === null && !this.showPlans) {
+          Column({ space: space.lg }) {
+            Stack({ alignContent: Alignment.Center }) {
+              AnimatedRing({
+                ratio: 0.76,
+                diameter: 190,
+                stroke: 12,
+                valueColor: color.primary,
+                trackColor: color.ringTrack
+              })
+              SymbolGlyph($r('sys.symbol.stopwatch'))
+                .fontSize(48)
+                .fontColor([color.primary])
+            }
+            .width('100%')
+            .height(210)
+            .margin({ top: space.sm, bottom: space.sm })
 
-        ForEach(FASTING_PLANS, (p: FastingPlan) => {
-          Row() {
-            Column({ space: 2 }) {
-              Text(p.name)
-                .fontSize(fontSize.body)
+            Column({ space: space.sm }) {
+              Text('断食，让每一餐更有节奏')
+                .fontSize(fontSize.pageTitle)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(color.text)
-              Text(p.note)
-                .fontSize(fontSize.caption)
-                .fontColor(color.textHint)
+                .textAlign(TextAlign.Center)
+                .width('100%')
+
+              Text('记录断食时段，查看每次计划的进度。')
+                .fontSize(fontSize.body)
+                .fontColor(color.textSecondary)
+                .lineHeight(24)
+                .textAlign(TextAlign.Center)
+                .width('92%')
             }
+            .width('100%')
+            .alignItems(HorizontalAlign.Center)
+
+            Column({ space: space.md }) {
+              Row({ space: space.md }) {
+                SymbolGlyph($r('sys.symbol.stopwatch'))
+                  .fontSize(20)
+                  .fontColor([color.textHint])
+                Text('5 种方案，选择适合你的节奏')
+                  .fontSize(fontSize.body)
+                  .fontColor(color.text)
+                  .layoutWeight(1)
+              }
+              .width('100%')
+
+              Row({ space: space.md }) {
+                SymbolGlyph($r('sys.symbol.calendar'))
+                  .fontSize(20)
+                  .fontColor([color.textHint])
+                Text('实时查看坚持时长与剩余时间')
+                  .fontSize(fontSize.body)
+                  .fontColor(color.text)
+                  .layoutWeight(1)
+              }
+              .width('100%')
+
+              Row({ space: space.md }) {
+                SymbolGlyph($r('sys.symbol.calendar'))
+                  .fontSize(20)
+                  .fontColor([color.textHint])
+                Text('断食记录保存在本机')
+                  .fontSize(fontSize.body)
+                  .fontColor(color.text)
+                  .layoutWeight(1)
+              }
+              .width('100%')
+            }
+            .width('100%')
             .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
+            .padding(layout.cardPadding)
+            .backgroundColor(color.surface)
+            .border({ width: glass.borderWidth, color: color.glassBorder })
+            .borderRadius(glass.cardRadius)
 
-            Text(provenanceLabel(p.provenance))
-              .fontSize(fontSize.caption)
-              .fontColor(color.textHint)
-              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-              .backgroundColor(color.glassFill)
-              .borderRadius(radius.small)
-
-            Text('开始')
-              .fontSize(fontSize.caption)
-              .fontColor(color.primary)
-              .padding(8)
+            Button('选择方案')
+              .width('100%')
+              .height(56)
+              .fontSize(fontSize.body)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(Color.Black)
+              .backgroundColor(Color.White)
+              .borderRadius(28)
               .onClick(() => {
-                this.start(p);
+                this.showPlans = true;
               })
           }
           .width('100%')
-          .padding(layout.cardPadding)
-          .linearGradient(glassGradient(toneVeil(p.id)))
-          .borderRadius(glass.cardRadius)
-          .border({ width: glass.borderWidth, color: color.glassBorder })
-          .backdropBlur(glass.blurRadius)
-          .alignItems(VerticalAlign.Center)
-        }, (p: FastingPlan) => p.id)
+          .alignItems(HorizontalAlign.Center)
+          .padding({ top: space.md, bottom: space.md })
+        }
 
-        Text('方案名称为实测（strings 命中）；原版的热量分配与到点提醒无证据，此处未实现。')
-          .fontSize(fontSize.caption)
-          .fontColor(color.textHint)
-          .width('100%')
+        if (this.active === null && this.showPlans) {
+          Text('‹ 返回断食介绍')
+            .fontSize(fontSize.secondary)
+            .fontColor(color.textSecondary)
+            .width('100%')
+            .onClick(() => {
+              this.showPlans = false;
+            })
+
+          Text('选择断食方案')
+            .fontSize(fontSize.sectionTitle)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(color.text)
+            .width('100%')
+
+          ForEach(FASTING_PLANS, (p: FastingPlan) => {
+            Row() {
+              Column({ space: 2 }) {
+                Text(p.name)
+                  .fontSize(fontSize.body)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(color.text)
+                Text(p.note)
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+
+              Text(provenanceLabel(p.provenance))
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                .backgroundColor(color.glassFill)
+                .borderRadius(radius.small)
+
+              Text('开始')
+                .fontSize(fontSize.caption)
+                .fontColor(color.primary)
+                .padding(8)
+                .onClick(() => {
+                  this.start(p);
+                })
+            }
+            .width('100%')
+            .padding(layout.cardPadding)
+            .linearGradient(glassGradient(toneVeil(p.id)))
+            .borderRadius(glass.cardRadius)
+            .border({ width: glass.borderWidth, color: color.glassBorder })
+            .alignItems(VerticalAlign.Center)
+          }, (p: FastingPlan) => p.id)
+
+          Text('方案名称为实测（strings 命中）；原版的热量分配与到点提醒无证据，此处未实现。')
+            .fontSize(fontSize.caption)
+            .fontColor(color.textHint)
+            .width('100%')
+        }
       }
       .padding(layout.pagePadding)
       .opacity(this.filled ? 1 : 0)

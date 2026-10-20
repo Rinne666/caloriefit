@@ -13,6 +13,7 @@ import { AiCredentialStore } from '../repositories/AiCredentialStore';
 import { AppDialogService } from '../services/AppDialogService';
 import { AiImagePayload } from '../models/AiImagePayload';
 import { AiRecognitionResult } from '../models/AiRecognitionResult';
+import { AiConfig } from '../models/AiConfig';
 import { AiErrorCode, AiError, aiErrorText, AI_LOW_CONFIDENCE } from '../common/AiConstants';
 import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { formatNumber } from '../common/DateUtils';
@@ -55,6 +56,7 @@ export struct AiRecognitionPage {
   @State errorMessage: string = '';
   @State hasError: boolean = false;
   @State busy: boolean = false;
+  @State private requestPending: boolean = false;
   @State demoMode: boolean = false;
   private requestSeq: number = 0;
 
@@ -150,9 +152,10 @@ export struct AiRecognitionPage {
   }
 
   private async startRecognize(): Promise<void> {
-    if (this.busy || this.photoUri === null) {
+    if (this.busy || this.requestPending || this.photoUri === null) {
       return;
     }
+    const demo = AiConfigRepository.isDemoMode();
     // 无 Key：跳设置或手动
     let apiKey = '';
     try {
@@ -161,13 +164,43 @@ export struct AiRecognitionPage {
       apiKey = '';
     }
     if (apiKey.length === 0) {
-      const demo = AiConfigRepository.isDemoMode();
       if (!demo) {
         this.askForApiKey();
         return;
       }
     }
 
+    try {
+      const config = await AiConfigRepository.loadConfig();
+      if (!demo) {
+        this.requestPending = true;
+        this.getUIContext().showAlertDialog({
+          title: '确认发送食物照片',
+          message: `本次选中的照片会缩放并压缩后，通过 HTTPS 发送至以下 AI 服务：\n${config.baseUrl}\n\n请求还会携带你配置的 API Key。应用没有自有服务器中转；接收方的处理和留存规则以该服务方政策为准。不同意可取消并手动记录。`,
+          primaryButton: {
+            value: '取消',
+            action: () => {
+              this.requestPending = false;
+            }
+          },
+          secondaryButton: {
+            value: '同意并识别',
+            action: () => {
+              this.requestPending = false;
+              this.performRecognition(config, apiKey);
+            }
+          }
+        });
+        return;
+      }
+      await this.performRecognition(config, apiKey);
+    } catch (e) {
+      this.requestPending = false;
+      this.showError(e as object);
+    }
+  }
+
+  private async performRecognition(config: AiConfig, apiKey: string): Promise<void> {
     const seq = ++this.requestSeq;
     this.busy = true;
     this.hasError = false;
@@ -175,7 +208,6 @@ export struct AiRecognitionPage {
     const loadingId = AppDialogService.showLoading('正在识别食物…');
     try {
       const imagePayload = await ImageProcessor.prepareImage(this.photoUri!);
-      const config = await AiConfigRepository.loadConfig();
       const result = await AiRecognitionService.recognize(imagePayload, config, apiKey);
       if (seq !== this.requestSeq) {
         return; // 迟到结果丢弃
@@ -364,7 +396,7 @@ export struct AiRecognitionPage {
             .fontColor(color.onPrimary)
             .backgroundColor(color.primary)
             .borderRadius(radius.large)
-            .enabled(this.photoUri !== null && !this.busy)
+            .enabled(this.photoUri !== null && !this.busy && !this.requestPending)
             .onClick(() => {
               this.startRecognize();
             })

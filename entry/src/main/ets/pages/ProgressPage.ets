@@ -213,9 +213,9 @@ export struct ProgressPage {
             .borderRadius(radius.pill)
             .onClick(() => {
               setComingSoon('Report 导出',
-                '把一段时间的摄入与宏量导出为可分享的报告',
-                '原版有导出按钮，本地没有对应的生成与分享实现',
-                '确定导出格式（图片 / PDF）并接入系统分享后即可补齐',
+                '将一段时间的摄入与宏量记录整理为个人报告',
+                '当前项目尚未实现报告生成与本地文件导出',
+                '实现 PDF 或图片生成，并由用户自主保存到设备',
                 Provenance.MEASURED);
               this.reportVisible = true;
             })
@@ -256,7 +256,6 @@ export struct ProgressPage {
           .linearGradient(glassGradient(toneVeil('avg-kcal')))
           .borderRadius(glass.cardRadius)
           .border({ width: glass.borderWidth, color: color.glassBorder })
-          .backdropBlur(glass.blurRadius)
 
           Column({ space: 2 }) {
             Text(`${this.onTargetDays()}`)
@@ -273,7 +272,6 @@ export struct ProgressPage {
           .linearGradient(glassGradient(toneVeil('on-target')))
           .borderRadius(glass.cardRadius)
           .border({ width: glass.borderWidth, color: color.glassBorder })
-          .backdropBlur(glass.blurRadius)
         }
         .width('100%')
 
@@ -328,7 +326,6 @@ export struct ProgressPage {
         .linearGradient(glassGradient(toneVeil('progress-chart')))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
 
@@ -437,7 +434,6 @@ export struct ProgressPage {
     .linearGradient(glassGradient(toneVeil(title)))
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       setComingSoon(title, '恢复生理状态的综合评分', blocker, needed, Provenance.INFERRED);

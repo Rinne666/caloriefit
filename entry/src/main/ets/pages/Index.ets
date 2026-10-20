@@ -3,7 +3,7 @@
  * Navigation 容器内放五个 Tab，编辑页通过 NavPathStack 打开 NavDestination。
  *
  * 底 Tab 结构对齐 NutriScan 实测路由图：
- *   今日（内含 综合/社群/饮水/断食 四个子页）
+ *   今日（综合/饮水/断食，面向个人记录）
  *   膳食（膳食计划/购物清单/补剂/生活方式）
  *   进度（今天/本周/近30天 + Readiness/NutriScore）
  *   营养师（AI 对话，未实现跳转）
@@ -32,7 +32,11 @@ import { AiSettingsPage } from './AiSettingsPage';
 import { ComingSoonPage } from '../components/ComingSoonPage';
 import { OnboardingPage } from './OnboardingPage';
 import { OnboardingService } from '../services/OnboardingService';
-import { common } from '@kit.AbilityKit';import { color, fontSize, pageGradient } from '../common/DesignTokens';
+import { PrivacyConsentService } from '../services/PrivacyConsentService';
+import { PrivacyConsentPage } from './PrivacyConsentPage';
+import { PrivacyPolicyPage } from './PrivacyPolicyPage';
+import { common } from '@kit.AbilityKit';
+import { color, fontSize, pageGradient } from '../common/DesignTokens';
 import { todayKey } from '../common/DateUtils';
 
 @Entry
@@ -44,6 +48,9 @@ struct Index {
   @State initError: string = '';
   /** 是否已走过引导。false 时首屏是 OnboardingPage，走完才进主界面 */
   @State onboarded: boolean = false;
+  @State private selectedBottomTab: number = 0;
+  @State private todaySubPage: number = 0;
+  @StorageLink('privacyConsentAccepted') privacyConsentAccepted: boolean = false;
 
   aboutToAppear(): void {
     this.initApp();
@@ -59,6 +66,8 @@ struct Index {
       const settings: AppSettings = await SettingsRepository.getSettings();
       AppStorage.setOrCreate<AppSettings>('appSettings', settings);
       AppStorage.setOrCreate<number>('refreshTick', 0);
+      this.privacyConsentAccepted = PrivacyConsentService.isAccepted(context as common.UIAbilityContext);
+      AppStorage.setOrCreate<boolean>('privacyConsentAccepted', this.privacyConsentAccepted);
       this.onboarded = OnboardingService.isDone(context as common.UIAbilityContext);
       this.appReady = true;
     } catch (e) {
@@ -69,6 +78,15 @@ struct Index {
 
   private onDateChanged(): void {
     // 切换日期后各页面通过自己的 @Watch 重新加载
+  }
+
+  private onPrivacyAccepted(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context !== undefined) {
+      this.onboarded = OnboardingService.isDone(context as common.UIAbilityContext);
+    }
+    this.selectedBottomTab = 0;
+    this.privacyConsentAccepted = true;
   }
 
   /**
@@ -92,6 +110,8 @@ struct Index {
       AiRecognitionPage()
     } else if (name === 'AiSettings') {
       AiSettingsPage()
+    } else if (name === 'PrivacyPolicy') {
+      PrivacyPolicyPage()
     } else if (name === 'FoodLog') {
       /**
        * 全部餐食：从底 Tab 收进二级路由，入口在「我的 → 全部餐食」。
@@ -114,22 +134,107 @@ struct Index {
     }
   }
 
-  /**
-   * 底 Tab 项：图标 + 文字。
-   *
-   * 之前只给文字，与原版「图标+文字」不一致（实测 main_nav_04_Progress.png
-   * 五个 Tab 都带图标）。今日页的四个子页已经是图标+文字，底栏保持一致。
-   */
+  private tabTint(index: number): ResourceColor {
+    return this.selectedBottomTab === index ? color.text : color.textHint;
+  }
+
+  /** NutriScan 底栏使用单色线框符号；用系统 SymbolGlyph 避免彩色 emoji。 */
   @Builder
-  TabItem(icon: string, label: string) {
-    Column({ space: 2 }) {
-      Text(icon)
-        .fontSize(20)
-      Text(label)
-        .fontSize(12)
-        .fontWeight(FontWeight.Medium)
+  TabGlyph(index: number) {
+    if (index === 0) {
+      if (this.selectedBottomTab === index) {
+        SymbolGlyph($r('sys.symbol.house_fill'))
+          .fontSize(24)
+          .fontColor([this.tabTint(index)])
+      } else {
+        SymbolGlyph($r('sys.symbol.house'))
+          .fontSize(24)
+          .fontColor([this.tabTint(index)])
+      }
+    } else if (index === 1) {
+      if (this.selectedBottomTab === index) {
+        SymbolGlyph($r('sys.symbol.calendar_fill'))
+          .fontSize(24)
+          .fontColor([this.tabTint(index)])
+      } else {
+        SymbolGlyph($r('sys.symbol.calendar'))
+          .fontSize(24)
+          .fontColor([this.tabTint(index)])
+      }
+    } else if (index === 2) {
+      Row({ space: 3 }) {
+        Column()
+          .width(4)
+          .height(8)
+          .backgroundColor(this.tabTint(index))
+          .borderRadius(2)
+        Column()
+          .width(4)
+          .height(14)
+          .backgroundColor(this.tabTint(index))
+          .borderRadius(2)
+        Column()
+          .width(4)
+          .height(21)
+          .backgroundColor(this.tabTint(index))
+          .borderRadius(2)
+      }
+      .width(24)
+      .height(24)
+      .alignItems(VerticalAlign.Bottom)
+    } else if (index === 3) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(21)
+          .height(21)
+          .fill(Color.Transparent)
+          .stroke(this.tabTint(index))
+          .strokeWidth(2)
+        Circle()
+          .width(3)
+          .height(3)
+          .fill(this.tabTint(index))
+          .offset({ x: -4, y: -4 })
+        Circle()
+          .width(3)
+          .height(3)
+          .fill(this.tabTint(index))
+          .offset({ x: 3, y: -3 })
+        Circle()
+          .width(3)
+          .height(3)
+          .fill(this.tabTint(index))
+          .offset({ x: -2, y: 4 })
+        Circle()
+          .width(9)
+          .height(9)
+          .fill(color.surface)
+          .offset({ x: 8, y: -8 })
+      }
+      .width(26)
+      .height(26)
+    } else {
+      SymbolGlyph($r('sys.symbol.person'))
+        .fontSize(24)
+        .fontColor([this.tabTint(index)])
     }
+  }
+
+  /** 五项等宽底栏，标签、单色图标和深色表面按 NutriScan 截图还原。 */
+  @Builder
+  TabItem(label: string, index: number) {
+    Column({ space: 4 }) {
+      this.TabGlyph(index)
+      Text(label)
+        .fontSize(13)
+        .fontWeight(this.selectedBottomTab === index ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(this.tabTint(index))
+        .maxLines(1)
+    }
+    .width('100%')
+    .height('100%')
     .justifyContent(FlexAlign.Center)
+    .backgroundColor(color.surface)
   }
 
   build() {
@@ -143,6 +248,10 @@ struct Index {
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
+      } else if (!this.privacyConsentAccepted) {
+        PrivacyConsentPage({
+          onAccepted: () => this.onPrivacyAccepted()
+        })
       } else if (!this.onboarded) {
         // 首启引导：目标 / 活动量 / 通知 / 补剂 / 生活方式，
         // 结果真的写进体征档案，直接影响 BMR/TDEE 推导
@@ -154,35 +263,43 @@ struct Index {
       } else {
         Tabs({ barPosition: BarPosition.End }) {
             TabContent() {
-              HomeTabs()
+              HomeTabs({
+                onSubPageChange: (index: number) => {
+                  this.todaySubPage = index;
+                }
+              })
             }
-            .tabBar(this.TabItem('📊', '今日'))
+            .tabBar(this.TabItem('今日', 0))
 
             TabContent() {
               DietPlanPage()
             }
-            .tabBar(this.TabItem('🥗', '膳食'))
+            .tabBar(this.TabItem('膳食', 1))
 
             TabContent() {
               ProgressPage()
             }
-            .tabBar(this.TabItem('📈', '进度'))
+            .tabBar(this.TabItem('进度', 2))
 
             TabContent() {
               NutriBitesPage()
             }
-            .tabBar(this.TabItem('💬', '营养师'))
+            .tabBar(this.TabItem('营养师', 3))
 
             TabContent() {
               ProfilePage()
             }
-            .tabBar(this.TabItem('👤', '我的'))
+            .tabBar(this.TabItem('我的', 4))
           }
+          .barHeight(this.selectedBottomTab === 0 && this.todaySubPage !== 0 ? 0 : 72)
+          .onChange((index: number) => {
+            this.selectedBottomTab = index;
+          })
           .width('100%')
           .height('100%')
           .backgroundColor(color.bg)
           .linearGradient(pageGradient())
-        }
+      }
     }
     .navDestination(this.PageMap)
     .hideTitleBar(true)

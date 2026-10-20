@@ -3,7 +3,7 @@
  *
  * 对应 NutriScan 首页每个指标下方的 M T W T F S S 周条。
  *
- * V4：外壳换成玻璃层，色调由 'trend' 种子决定。
+ * 卡片面与描边统一走主题 token。
  *
  * 设计要点：
  *   · 固定 7 个槽位，缺数据的日子画空槽而非压缩 —— 保持星期对齐
@@ -194,7 +194,6 @@ export struct WeekSparkline {
     .linearGradient(glassGradient(toneVeil('trend')))
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
     .alignItems(HorizontalAlign.Start)
     .onAppear(() => {

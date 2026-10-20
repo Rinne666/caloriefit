@@ -168,7 +168,6 @@ export struct MacroPanel {
     .linearGradient(glassGradient(toneVeil('macro')))
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
     .alignItems(HorizontalAlign.Start)
   }

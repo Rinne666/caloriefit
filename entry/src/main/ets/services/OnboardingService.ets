@@ -7,8 +7,10 @@
  *
  * 两处**有意不复制**：
  *   · 语言选择 —— 本 App 只发中文，做一屏只能选自己，没有意义
- *   · 订阅墙   —— 原版是「划线价与实付价相同却宣称 70% off」的虚假折扣，
- *                  不克隆。引导以「生活方式」收尾。
+ *   · 订阅墙   —— 本项目产品定位为**完全免费**：不设试用、不设升级入口、
+ *                  没有应用内购买与订阅校验。原版那一屏还是「划线价与实付价
+ *                  相同却宣称 70% off」的虚假折扣，更没有克隆价值。
+ *                  引导以「生活方式」收尾。
  * 详见 交付说明_NutriScan复现.md §4。
  */
 
@@ -85,6 +87,13 @@ export class OnboardingService {
     }
   }
 
+  /** 删除未完成引导中暂存的健康偏好，保留已完成标记。 */
+  static clearDraft(context: common.UIAbilityContext): void {
+    const store = OnboardingService.store(context);
+    store.deleteSync(ONBOARDING_DRAFT_KEY);
+    store.flush();
+  }
+
   /**
    * 把引导结果写进体征档案。
    *
@@ -102,8 +111,8 @@ export class OnboardingService {
     }
   }
 
-  /** 性别在引导里不问，默认沿用档案里的值 */
+  /** 引导不采集性别，因此新档案保持未选择。 */
   static defaultSex(): Sex {
-    return Sex.MALE;
+    return Sex.UNSPECIFIED;
   }
 }

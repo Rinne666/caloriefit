@@ -2,9 +2,7 @@
  * 统计卡片：标题 + 大数字 + 单位 + 自绘线性进度条。
  * 组件不访问数据库，只接受数据。
  *
- * V4：外壳换成玻璃层，色调用 title 做种子 ——
- * 于是同一行里的「步数」和「运动时长」自动是两个不同色调，
- * 而调色板、圆角、排版完全一致，这就是「统一但不重复」。
+ * 卡片面与描边统一走主题 token，不随标题改变色调。
  */
 
 import {
@@ -20,12 +18,26 @@ export struct MetricCard {
   @Prop progress: number;
   @Prop barColor: ResourceColor = color.primary;
   @Prop goalText: string = '';
+  @Prop sourceLabel: string = '';
 
   build() {
     Column({ space: space.xs }) {
-      Text(this.title)
-        .fontSize(fontSize.secondary)
-        .fontColor(color.textSecondary)
+      Row({ space: space.xs }) {
+        Text(this.title)
+          .fontSize(fontSize.secondary)
+          .fontColor(color.textSecondary)
+          .layoutWeight(1)
+
+        if (this.sourceLabel.length > 0) {
+          Text(this.sourceLabel)
+            .fontSize(fontSize.caption)
+            .fontColor(color.textHint)
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .backgroundColor(color.surfaceMuted)
+            .borderRadius(8)
+        }
+      }
+      .width('100%')
 
       Row({ space: 4 }) {
         Text(this.valueText)
@@ -69,7 +81,6 @@ export struct MetricCard {
     .linearGradient(glassGradient(toneVeil(this.title)))
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
   }
 }

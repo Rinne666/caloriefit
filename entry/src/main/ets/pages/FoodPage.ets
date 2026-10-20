@@ -275,7 +275,6 @@ export struct FoodPage {
         })
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
 
         // AI 拍照识别入口
@@ -310,7 +309,6 @@ export struct FoodPage {
         .linearGradient(glassGradient(toneVeil('ai')))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
 
         if (this.foods.length === 0) {
@@ -323,7 +321,7 @@ export struct FoodPage {
           })
         } else {
           ForEach(MEAL_LABELS, (label: string, index: number) => {
-            // 玻璃外壳写在这里而不是抽成卡片组件：
+            // 卡片外壳写在这里而不是抽成卡片组件：
             // 卡片本身就在 ForEach 里，需要带参的 builder，
             // 而 @BuilderParam 不支持柯里化，套一层只会更绕。
             // 层次与其余卡片完全一致。
@@ -356,7 +354,6 @@ export struct FoodPage {
             .linearGradient(glassGradient(toneVeil(label)))
             .borderRadius(glass.cardRadius)
             .border({ width: glass.borderWidth, color: color.glassBorder })
-            .backdropBlur(glass.blurRadius)
             .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
             .alignItems(HorizontalAlign.Start)
           }, (label: string) => label)

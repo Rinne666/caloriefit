@@ -43,39 +43,56 @@ export class AiCredentialStore {
   }
 
   static async saveApiKey(apiKey: string, remember: boolean): Promise<void> {
-    // 任何情况下本会话可用
-    AiCredentialStore.sessionKey = apiKey;
     if (!remember) {
+      // 关闭记住时先删除磁盘凭证；删除失败就不谎报切换成功。
+      await AiCredentialStore.forgetPersistedApiKey();
+      AiCredentialStore.sessionKey = apiKey;
       return;
     }
+    const encoder = new util.TextEncoder();
+    const addMap: asset.AssetMap = new Map();
+    addMap.set(asset.Tag.ALIAS, AiCredentialStore.aliasBytes());
+    addMap.set(asset.Tag.SECRET, encoder.encodeInto(apiKey));
     try {
-      const encoder = new util.TextEncoder();
-      const addMap: asset.AssetMap = new Map();
-      addMap.set(asset.Tag.ALIAS, AiCredentialStore.aliasBytes());
-      addMap.set(asset.Tag.SECRET, encoder.encodeInto(apiKey));
       await asset.add(addMap);
     } catch (e) {
       const err = e as BusinessError;
-      throw new AiError(AiErrorCode.SECURE_STORE_UNAVAILABLE, err.message);
+      if (err.code === asset.ErrorCode.DUPLICATED) {
+        const queryMap: asset.AssetMap = new Map();
+        queryMap.set(asset.Tag.ALIAS, AiCredentialStore.aliasBytes());
+        const updateMap: asset.AssetMap = new Map();
+        updateMap.set(asset.Tag.SECRET, encoder.encodeInto(apiKey));
+        try {
+          await asset.update(queryMap, updateMap);
+        } catch (updateError) {
+          const updateErr = updateError as BusinessError;
+          throw new AiError(AiErrorCode.SECURE_STORE_UNAVAILABLE, updateErr.message);
+        }
+      } else {
+        throw new AiError(AiErrorCode.SECURE_STORE_UNAVAILABLE, err.message);
+      }
     }
+    // 仅在安全存储操作成功后更新本会话凭证。
+    AiCredentialStore.sessionKey = apiKey;
   }
 
-  static async clearApiKey(): Promise<void> {
-    AiCredentialStore.sessionKey = null;
+  /** 删除持久化凭证，但保留当前会话中的密钥。 */
+  static async forgetPersistedApiKey(): Promise<void> {
     try {
       const removeMap: asset.AssetMap = new Map();
       removeMap.set(asset.Tag.ALIAS, AiCredentialStore.aliasBytes());
       await asset.remove(removeMap);
     } catch (e) {
-      // 不存在视为已清除
+      const err = e as BusinessError;
+      if (err.code !== asset.ErrorCode.NOT_FOUND) {
+        throw new AiError(AiErrorCode.SECURE_STORE_UNAVAILABLE, err.message);
+      }
     }
   }
 
-  /**
-   * 环境是否支持安全存储。asset 模块无 isSupport 探测接口，
-   * 以真实写入结果为准（saveApiKey 失败时抛 SECURE_STORE_UNAVAILABLE）。
-   */
-  static async canPersistSecurely(): Promise<boolean> {
-    return true;
+  static async clearApiKey(): Promise<void> {
+    await AiCredentialStore.forgetPersistedApiKey();
+    AiCredentialStore.sessionKey = null;
   }
+
 }

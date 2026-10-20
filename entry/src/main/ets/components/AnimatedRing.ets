@@ -28,7 +28,7 @@ export struct AnimatedRing {
   @Prop stroke: number = layout.ringStroke;
   @Prop valueColor: ResourceColor = color.primary;
   @Prop trackColor: ResourceColor = color.ringTrack;
-  /** 置 true 表示位于主视觉饱和卡上，轨道改用半透明白 */
+  /** 置 true 表示位于主视觉卡上，轨道使用主题配置的主视觉轨道色 */
   @Prop onHero: boolean = false;
 
   @State private shown: number = 0;

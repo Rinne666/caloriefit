@@ -246,48 +246,6 @@ export const GROCERY_LIST: GroceryItem[] = [
 ];
 
 /* ==================================================================
- * 社群 Club
- * ------------------------------------------------------------------
- * 实测：日志有「Club couldn't be loaded」「official posts config read failed」
- *       与开关文案「Afficher mon profil dans le Club」（在 Club 展示我的资料）。
- * 推断：内容源是服务端配置，本地无法拉取 —— 以下为 mock 帖子。
- * ================================================================== */
-
-export class ClubPost {
-  id: string;
-  author: string;
-  badge: string;
-  content: string;
-  likes: number;
-  comments: number;
-  official: boolean;
-  provenance: Provenance;
-
-  constructor(id: string, author: string, badge: string, content: string,
-              likes: number, comments: number, official: boolean, provenance: Provenance) {
-    this.id = id;
-    this.author = author;
-    this.badge = badge;
-    this.content = content;
-    this.likes = likes;
-    this.comments = comments;
-    this.official = official;
-    this.provenance = provenance;
-  }
-}
-
-export const CLUB_POSTS: ClubPost[] = [
-  new ClubPost('c1', '官方', '公告',
-    '连续记录 7 天可解锁一次周报，你的连胜还在继续吗？', 128, 12, true, Provenance.MOCK),
-  new ClubPost('c2', 'Lena', '14 天连胜',
-    '把晚餐提前到 19:00 之后就不饿了，这个调整意外地好坚持', 64, 8, false, Provenance.MOCK),
-  new ClubPost('c3', 'Marco', '20 天连胜',
-    '16:8 第四周，只在周末放宽窗口，工作日严格执行', 41, 5, false, Provenance.MOCK),
-  new ClubPost('c4', '官方', '公告',
-    '饮水记录已支持自定义目标，点铅笔图标即可修改', 87, 3, true, Provenance.MOCK)
-];
-
-/* ==================================================================
  * 进度 Progress
  * ------------------------------------------------------------------
  * 实测：`readiness_score` / `readiness_breakdown` 字段、

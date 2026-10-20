@@ -16,6 +16,7 @@ import {
 import { migrateFoodV1ToV2 } from './MigrationV1ToV2';
 import { migrateV2ToV3 } from './MigrationV2ToV3';
 import { migrateV3ToV4 } from './MigrationV3ToV4';
+import { migrateV4ToV5 } from './MigrationV4ToV5';
 
 const DOMAIN = 0x0001;
 const TAG = 'CalorieFitDB';
@@ -94,12 +95,16 @@ export class Database {
         // 已是 V2：补写版本号（处理迁移提交后、写版本前退出的情况）
         hilog.info(DOMAIN, TAG, 'food_log already V2, skip V1->V2 migration');
       }
+      // 先扩展旧 body_profile 的 CHECK 约束，再执行含空档案初始化的 V2→V3。
+      // 否则已删除档案的旧库会尝试把 unspecified 插入旧约束而启动失败。
+      await migrateV4ToV5(store);
       // V2 → V3 对全量路径统一执行，内部逐列探测，重入安全
       await migrateV2ToV3(store);
-      // V3 → V4 同样全量执行：两张新表 CREATE IF NOT EXISTS，
-      // app_settings 加列前逐列探测，重复跑不会炸
-      await migrateV3ToV4(store);
     }
+    // V3 → V4 也覆盖全新库，确保饮水/断食表与饮水目标列存在。
+    await migrateV3ToV4(store);
+    // V4 → V5 移除旧初始化写入的虚构体征，并允许未填写枚举值。
+    await migrateV4ToV5(store);
     store.version = DATABASE_VERSION;
     Database.store = store;
     return store;
@@ -116,7 +121,7 @@ export class Database {
     return Database.appContext;
   }
 
-  /** 清空全部业务记录（三张表，同一事务），app_settings 与 AI 配置不删除 */
+  /** 清空饮食/运动/步数/饮水/断食记录；保留身体档案、目标设置和 AI 配置 */
   static async clearAllRecords(): Promise<void> {
     const store = Database.getStore();
     store.beginTransaction();
@@ -135,6 +140,27 @@ export class Database {
       hilog.error(DOMAIN, TAG, 'clearAllRecords failed: %{public}s', err.message);
       store.rollBack();
       throw new Error(`clearAllRecords failed: ${err.message}`);
+    }
+  }
+
+  /** 删除全部健康记录、身体档案和目标设置，在同一数据库事务中完成。 */
+  static async clearAllUserData(): Promise<void> {
+    const store = Database.getStore();
+    store.beginTransaction();
+    try {
+      await store.executeSql('DELETE FROM food_log');
+      await store.executeSql('DELETE FROM exercise_log');
+      await store.executeSql('DELETE FROM daily_activity');
+      await store.executeSql('DELETE FROM water_log');
+      await store.executeSql('DELETE FROM fasting_log');
+      await store.executeSql('DELETE FROM body_profile');
+      await store.executeSql('DELETE FROM app_settings');
+      store.commit();
+    } catch (e) {
+      const err = e as BusinessError;
+      hilog.error(DOMAIN, TAG, 'clearAllUserData failed: %{public}s', err.message);
+      store.rollBack();
+      throw new Error(`clearAllUserData failed: ${err.message}`);
     }
   }
 }

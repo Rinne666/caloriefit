@@ -1,8 +1,7 @@
 /**
  * 统一空状态提示
  *
- * V4：空状态用更实的玻璃层（glassFillStr），页面上没有内容时
- * 这一块就是唯一的视觉落点，不该显得单薄。
+ * 空状态沿用页面的平面卡片材质，按钮使用品牌强调色。
  */
 
 import {
@@ -45,7 +44,6 @@ export struct EmptyState {
     })
     .borderRadius(glass.cardRadius)
     .border({ width: glass.borderWidth, color: color.glassBorder })
-    .backdropBlur(glass.blurRadius)
     .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
     .alignItems(HorizontalAlign.Center)
   }

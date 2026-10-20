@@ -209,12 +209,13 @@ export struct ActivityPage {
           })
 
           MetricCard({
-            title: '步数（模拟）',
+            title: '步数',
             valueText: formatNumber(this.steps),
             unit: '步',
             progress: CalorieService.progress(this.steps,
               this.settings !== null ? this.settings.stepsGoal : 8000),
             barColor: color.activity,
+            sourceLabel: '手动模拟',
             goalText: `目标 ${formatNumber(this.settings !== null ? this.settings.stepsGoal : 8000)} 步`
           })
         }
@@ -258,7 +259,6 @@ export struct ActivityPage {
         .linearGradient(glassGradient(toneVeil('steps')))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
 
@@ -332,7 +332,6 @@ export struct ActivityPage {
         .linearGradient(glassGradient(toneVeil('exercise')))
         .borderRadius(glass.cardRadius)
         .border({ width: glass.borderWidth, color: color.glassBorder })
-        .backdropBlur(glass.blurRadius)
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .alignItems(HorizontalAlign.Start)
 

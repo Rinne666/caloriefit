@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "记录饮食、饮水、运动与健康目标"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "记录每日热量与营养摄入，查看饮水、运动和趋势"
     },
     {
       "name": "EntryAbility_label",
-      "value": "label"
+      "value": "CalorieFit"
     }
   ]
 }

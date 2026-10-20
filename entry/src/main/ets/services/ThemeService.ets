@@ -32,15 +32,15 @@ function toColorMode(mode: ThemeMode): ConfigurationConstant.ColorMode {
   return ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
 }
 
-/** 把任意存储值收敛成合法的 ThemeMode，脏数据一律退回跟随系统 */
+/** 把任意存储值收敛成合法的 ThemeMode，缺失/脏数据回到 NutriScan 深色基线 */
 function normalize(v: preferences.ValueType): ThemeMode {
   if (typeof v !== 'string') {
-    return ThemeMode.SYSTEM;
+    return ThemeMode.DARK;
   }
   if (v === ThemeMode.LIGHT || v === ThemeMode.DARK || v === ThemeMode.SYSTEM) {
     return v as ThemeMode;
   }
-  return ThemeMode.SYSTEM;
+  return ThemeMode.DARK;
 }
 
 export class ThemeService {
@@ -49,38 +49,43 @@ export class ThemeService {
   static async load(ctx: common.UIAbilityContext): Promise<ThemeMode> {
     try {
       const store = await preferences.getPreferences(ctx, { name: PREF_NAME });
-      const mode = normalize(await store.get(THEME_PREF_KEY, ThemeMode.SYSTEM as string));
+      // NutriScan 的默认界面是暗色；用户可在「我的 → 外观」显式选择另外两种模式。
+      const mode = normalize(await store.get(THEME_PREF_KEY, ThemeMode.DARK as string));
       AppStorage.setOrCreate<string>(THEME_PREF_KEY, mode);
       return mode;
     } catch (e) {
-      AppStorage.setOrCreate<string>(THEME_PREF_KEY, ThemeMode.SYSTEM);
-      return ThemeMode.SYSTEM;
+      AppStorage.setOrCreate<string>(THEME_PREF_KEY, ThemeMode.DARK);
+      return ThemeMode.DARK;
     }
   }
 
-  /** 保存偏好并立即应用。系统随之重建对应资源目录下的颜色表 */
+  /** 保存偏好并立即应用到当前 UIAbility。系统随之重建对应资源目录下的颜色表 */
   static async apply(ctx: common.UIAbilityContext, mode: ThemeMode): Promise<boolean> {
     try {
       const store = await preferences.getPreferences(ctx, { name: PREF_NAME });
       await store.put(THEME_PREF_KEY, mode);
       await store.flush();
       AppStorage.setOrCreate<string>(THEME_PREF_KEY, mode);
-      ctx.getApplicationContext().setColorMode(toColorMode(mode));
+      ctx.setColorMode(toColorMode(mode));
       return true;
     } catch (e) {
       return false;
     }
   }
 
-  /** 供 EntryAbility 启动时调用：不需要 UI 上下文，用 ApplicationContext 即可 */
-  static async restore(appCtx: common.ApplicationContext): Promise<void> {
+  /**
+   * 供 EntryAbility 在页面加载完成后调用。
+   * UIAbility 的模式优先级高于 ApplicationContext；必须设置 AbilityContext，
+   * 否则冷启动可能仍按设备浅色模式解析资源，直到用户手动切换主题。
+   */
+  static async restore(ctx: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(appCtx, { name: PREF_NAME });
-      const mode = normalize(await store.get(THEME_PREF_KEY, ThemeMode.SYSTEM as string));
+      const store = await preferences.getPreferences(ctx, { name: PREF_NAME });
+      const mode = normalize(await store.get(THEME_PREF_KEY, ThemeMode.DARK as string));
       AppStorage.setOrCreate<string>(THEME_PREF_KEY, mode);
-      appCtx.setColorMode(toColorMode(mode));
+      ctx.setColorMode(toColorMode(mode));
     } catch (e) {
-      appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      ctx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
     }
   }
 }

@@ -45,6 +45,7 @@ export const ATWATER_FAT: number = 9;
 
 /** 活动量倍率 */
 export const ACTIVITY_MULTIPLIER: Record<ActivityLevel, number> = {
+  [ActivityLevel.UNSPECIFIED]: 1.200,
   [ActivityLevel.SEDENTARY]: 1.200,
   [ActivityLevel.LIGHT]: 1.375,
   [ActivityLevel.MODERATE]: 1.550,
@@ -54,6 +55,7 @@ export const ACTIVITY_MULTIPLIER: Record<ActivityLevel, number> = {
 
 /** 目标模式相对 TDEE 的热量调整(kcal/天) */
 export const MODE_ADJUSTMENT: Record<GoalMode, number> = {
+  [GoalMode.UNSPECIFIED]: 0,
   [GoalMode.WEIGHT_LOSS]: -500,
   [GoalMode.DEFICIT]: -500,
   [GoalMode.MAINTAIN]: 0,
