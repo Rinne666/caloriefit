@@ -47,6 +47,14 @@ export interface Limits {
   stepsGoalMax: number;
   minutesGoalMax: number;
   activityKcalGoalMax: number;
+  /** 体征档案：体重 kg 上限 */
+  bodyWeightMax: number;
+  /** 体征档案：身高 cm 上限 */
+  bodyHeightMax: number;
+  /** 体征档案：年龄岁数上限 */
+  bodyAgeMax: number;
+  /** 体征档案：体脂率 % 上限（不含该值本身） */
+  bodyFatMax: number;
 }
 
 export const LIMITS: Limits = {
@@ -59,7 +67,11 @@ export const LIMITS: Limits = {
   budgetMax: 10000,
   stepsGoalMax: 100000,
   minutesGoalMax: 1440,
-  activityKcalGoalMax: 10000
+  activityKcalGoalMax: 10000,
+  bodyWeightMax: 300,
+  bodyHeightMax: 250,
+  bodyAgeMax: 120,
+  bodyFatMax: 70
 };
 
 export const KIT_NAME = 'CalorieFit';

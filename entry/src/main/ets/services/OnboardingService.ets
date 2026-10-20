@@ -17,6 +17,9 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { ProfileRepository } from '../repositories/ProfileRepository';
+import { SettingsRepository } from '../repositories/SettingsRepository';
+import { AppSettings } from '../models/AppSettings';
+import { CalorieEngine } from './CalorieEngine';
 import {
   BodyProfile, GoalMode, ActivityLevel, Sex
 } from '../models/Calculation';
@@ -30,17 +33,32 @@ export const ONBOARDING_DRAFT_KEY: string = 'caloriefit_onboarding_draft';
 export enum OnboardStep {
   GOAL = 0,
   ACTIVITY = 1,
-  NOTIFY = 2,
-  SUPPLEMENT = 3,
-  LIFESTYLE = 4
+  /** 身体数据：体重/身高/年龄/性别/体脂率，首次打开时由用户手动填写 */
+  BODY = 2,
+  NOTIFY = 3,
+  SUPPLEMENT = 4,
+  LIFESTYLE = 5
 }
 
-export const ONBOARD_STEP_COUNT: number = 5;
+export const ONBOARD_STEP_COUNT: number = 6;
 
 /** 引导收集到的原始选择 */
 export class OnboardDraft {
   goal: GoalMode = GoalMode.WEIGHT_LOSS;
   activity: ActivityLevel = ActivityLevel.MODERATE;
+  /**
+   * 体重 kg。0 表示未填 —— 引导**不编造**体征默认值，
+   * 没填就不写库，由「我的 → 体征档案」补。
+   */
+  weightKg: number = 0;
+  /** 身高 cm，0 表示未填 */
+  heightCm: number = 0;
+  /** 年龄 岁，0 表示未填 */
+  ageYears: number = 0;
+  /** 性别 */
+  sex: Sex = Sex.UNSPECIFIED;
+  /** 体脂率百分数；null 表示未填，引擎回退 Mifflin-St Jeor */
+  bodyFatPct: number | null = null;
   /** 是否愿意服用补剂（实测引导语 "Can you take Nutritional Supplements?"） */
   supplements: boolean = false;
   /** 作息是否规律（实测分类 "Lifestyle & Feelings"） */
@@ -49,6 +67,12 @@ export class OnboardDraft {
   eatOut: number = 1;
 
   constructor() {
+  }
+
+  /** 必填项（体重/身高/年龄/性别）是否都填好了 */
+  hasRequiredBodyData(): boolean {
+    return this.weightKg > 0 && this.heightCm > 0 && this.ageYears > 0 &&
+      this.sex !== Sex.UNSPECIFIED;
   }
 }
 
@@ -97,21 +121,82 @@ export class OnboardingService {
   /**
    * 把引导结果写进体征档案。
    *
-   * 只覆盖 goal_mode / activity 两项 —— 体重身高年龄在后续设置页补，
-   * 不在这里编默认值糊弄过去。
+   * 写入策略：
+   *   · goal_mode / activity 总是覆盖（引导问的就是这两项）；
+   *   · 身体数据**只写用户真的填了的项**。没填的项保持原值，
+   *     既不用虚构值糊弄过去，也不会把用户已有的档案抹成 0 ——
+   *     「重看引导」不该清掉「我的 → 体征档案」里已填的内容。
+   *
+   * @param syncBudget 是否把推导出的目标热量同步为每日热量预算。
+   *        只在**首次**引导时为 true：首次还没有用户设定的预算，
+   *        同步后首页立刻反映用户填的体征；重看引导时不动预算，
+   *        免得覆盖用户在「我的 → 每日目标设置」里自己调过的值。
    */
-  static async applyToProfile(context: common.UIAbilityContext, draft: OnboardDraft): Promise<void> {
+  static async applyToProfile(context: common.UIAbilityContext, draft: OnboardDraft,
+    syncBudget: boolean): Promise<void> {
     try {
       const current: BodyProfile = await ProfileRepository.getBodyProfile();
       current.mode = draft.goal;
       current.activity = draft.activity;
+      if (draft.weightKg > 0) {
+        current.weightKg = draft.weightKg;
+      }
+      if (draft.heightCm > 0) {
+        current.heightCm = draft.heightCm;
+      }
+      if (draft.ageYears > 0) {
+        current.ageYears = draft.ageYears;
+      }
+      if (draft.sex !== Sex.UNSPECIFIED) {
+        current.sex = draft.sex;
+      }
+      if (draft.bodyFatPct !== null) {
+        current.bodyFatRatio = draft.bodyFatPct / 100;
+      }
       await ProfileRepository.saveBodyProfile(current);
+
+      if (syncBudget) {
+        await OnboardingService.syncDerivedBudget(current);
+      }
     } catch (e) {
       // 落库失败不阻断引导完成，用户仍可从「我的」里改
     }
   }
 
-  /** 引导不采集性别，因此新档案保持未选择。 */
+  /**
+   * 把体征推导出的目标热量写进每日热量预算，让首页与宏量口径一致。
+   *
+   * 宏量目标本来就是按体征实时推导的（target_auto），预算却是一个独立
+   * 字段，默认 1800。用户填完体征后若预算不动，首页会同时出现
+   * 「按推导的宏量」和「1800 的热量目标」两套口径，自相矛盾。
+   */
+  private static async syncDerivedBudget(profile: BodyProfile): Promise<void> {
+    if (!profile.isComplete()) {
+      return;
+    }
+    try {
+      const plan = CalorieEngine.plan({
+        weightKg: profile.weightKg,
+        heightCm: profile.heightCm,
+        ageYears: profile.ageYears,
+        sex: profile.sex,
+        bodyFatRatio: profile.bodyFatRatio,
+        activity: profile.activity,
+        mode: profile.mode
+      });
+      if (plan.targetCalories <= 0) {
+        return;
+      }
+      const settings: AppSettings = await SettingsRepository.getSettings();
+      settings.dailyCalorieBudget = plan.targetCalories;
+      await SettingsRepository.saveSettings(settings);
+      AppStorage.setOrCreate<AppSettings>('appSettings', settings);
+    } catch (e) {
+      // 预算同步失败不阻断引导完成
+    }
+  }
+
+  /** 引导不采集性别时的新档案保持未选择。 */
   static defaultSex(): Sex {
     return Sex.UNSPECIFIED;
   }

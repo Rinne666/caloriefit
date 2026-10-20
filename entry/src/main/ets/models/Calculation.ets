@@ -101,6 +101,23 @@ export class BodyProfile {
 }
 
 /**
+ * 体脂率比率 → 百分比文本。
+ *
+ * **不能用 toFixed(1)**：它会产出 "22.0" 这种带尾零的串，而
+ * `InputType.NUMBER_DECIMAL` 的输入框会把小数点吞掉 —— 实测
+ * 体脂率 0.22 回显成 "220"、0.20 回显成 "200"、手动输入 22.5 变成 "225"。
+ * 220 会被当成 220% 存回去（→ 2.2），超出合法范围后保存直接被拒；
+ * 而 68.5kg 这种带小数的体重若被吞成 685，就是数据损坏。
+ * 这里输出不带多余小数位的字符串：0.22 → "22"，0.225 → "22.5"。
+ */
+export function bodyFatPercentText(ratio: number | null): string {
+  if (ratio === null) {
+    return '';
+  }
+  return String(Math.round(ratio * 1000) / 10);
+}
+
+/**
  * 中文标签 —— 用函数而非 Record<K,V> 查表。
  *
  * ArkTS 不允许对字段做索引访问（arkts-no-props-by-index），

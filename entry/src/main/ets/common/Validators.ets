@@ -129,6 +129,77 @@ export function validateSteps(input: string): ParseResult {
   return pass(p.value);
 }
 
+// ---------- 体征档案 ----------
+
+/** 体重 kg。BMR/TDEE 的输入，须为正且在合理上限内。 */
+export function validateBodyWeight(input: string): ParseResult {
+  const p = parseNumber(input);
+  if (!p.ok) {
+    return p;
+  }
+  if (!hasAtMostOneDecimal(input)) {
+    return fail('体重最多一位小数');
+  }
+  if (p.value <= 0 || p.value > LIMITS.bodyWeightMax) {
+    return fail(`体重需大于 0 且不超过 ${LIMITS.bodyWeightMax}kg`);
+  }
+  return pass(p.value);
+}
+
+/** 身高 cm。 */
+export function validateBodyHeight(input: string): ParseResult {
+  const p = parseNumber(input);
+  if (!p.ok) {
+    return p;
+  }
+  if (!isInteger(p.value)) {
+    return fail('身高需为整数厘米');
+  }
+  if (p.value <= 0 || p.value > LIMITS.bodyHeightMax) {
+    return fail(`身高需大于 0 且不超过 ${LIMITS.bodyHeightMax}cm`);
+  }
+  return pass(p.value);
+}
+
+/** 年龄 岁。 */
+export function validateBodyAge(input: string): ParseResult {
+  const p = parseNumber(input);
+  if (!p.ok) {
+    return p;
+  }
+  if (!isInteger(p.value)) {
+    return fail('年龄需为整数岁');
+  }
+  if (p.value < 1 || p.value > LIMITS.bodyAgeMax) {
+    return fail(`年龄需在 1-${LIMITS.bodyAgeMax} 岁之间`);
+  }
+  return pass(p.value);
+}
+
+/**
+ * 体脂率 %，**可留空**。
+ *
+ * 留空返回 ok=true、value=0，由调用方按「未填」处理（存 null）。
+ * 引擎在体脂率缺失时回退 Mifflin-St Jeor 公式。
+ */
+export function validateBodyFat(input: string): ParseResult {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) {
+    return pass(0);
+  }
+  const p = parseNumber(input);
+  if (!p.ok) {
+    return p;
+  }
+  if (!hasAtMostOneDecimal(input)) {
+    return fail('体脂率最多一位小数');
+  }
+  if (p.value <= 0 || p.value >= LIMITS.bodyFatMax) {
+    return fail(`体脂率需大于 0 且小于 ${LIMITS.bodyFatMax}%，或留空`);
+  }
+  return pass(p.value);
+}
+
 // ---------- 目标 ----------
 
 export function validateBudget(input: string): ParseResult {

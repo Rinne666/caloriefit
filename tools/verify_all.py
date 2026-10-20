@@ -102,8 +102,11 @@ def dump(retries=5):
             if not isinstance(n, dict):
                 return
             a = n.get('attributes') or {}
-            if a.get('text'):
-                out.append({'text': a['text'], 'bounds': a.get('bounds', '')})
+            # 空输入框的 text 是空串，会被 `if a.get('text')` 滤掉 —— 但填写
+            # 表单时正需要按位置找到空框，所以 TextInput 一律收进来。
+            if a.get('text') or a.get('type') == 'TextInput':
+                out.append({'text': a['text'], 'bounds': a.get('bounds', ''),
+                            'type': a.get('type', '')})
             for c in (n.get('children') or []):
                 walk(c)
 
@@ -256,15 +259,74 @@ def accept_privacy_for_test():
     return not has(dump(), '请先阅读隐私说明')
 
 
+def _set_field(idx, value):
+    """把第 idx 个输入框设为 value。
+
+    uitest 的 inputText 是**追加**而不是替换，所以必须先清空。
+    清空不能只按固定次数的 DEL —— 实测会残留字符（21.5 → 21.55），
+    因此这里「按 DEL → 确认该框已空 → 才输入 → 确认等于目标值」，
+    每一步都读回 UI 树核对。
+    """
+    for _ in range(3):
+        nodes = [n for n in dump() if n.get('type') == 'TextInput']
+        if idx >= len(nodes):
+            return False
+        if nodes[idx]['text'] == value:
+            return True
+        c = center(nodes[idx]['bounds'])
+        if c is None:
+            return False
+        sh('shell', 'uitest', 'uiInput', 'click', str(c[0]), str(c[1]))
+        time.sleep(0.8)
+        for _ in range(20):
+            sh('shell', 'uitest', 'uiInput', 'keyEvent', '2055')
+        time.sleep(0.6)
+        nodes = [n for n in dump() if n.get('type') == 'TextInput']
+        if idx >= len(nodes) or nodes[idx]['text'] != '':
+            continue  # 没清干净，重来
+        sh('shell', 'uitest', 'uiInput', 'inputText', str(c[0]), str(c[1]), value)
+        time.sleep(1.0)
+        nodes = [n for n in dump() if n.get('type') == 'TextInput']
+        if idx < len(nodes) and nodes[idx]['text'] == value:
+            return True
+    return False
+
+
+def fill_body_data(values):
+    """往引导第 3 步「你的身体数据」表单里填值并选性别。"""
+    for _ in range(3):
+        if not all(_set_field(i, v) for i, v in enumerate(values)):
+            continue
+        # 收键盘：键盘开着时页面下半部分被挡住，滑动起点会落在键盘上 ——
+        # 实测滑一次就把键盘上的数字敲进了体脂率框（21.5 → 21.55）。
+        # 焦点在输入框上时返回键只会收键盘，不会退出页面。
+        sh('shell', 'uitest', 'uiInput', 'keyEvent', 'Back')
+        time.sleep(1.2)
+        if not has(dump(), '你的身体数据'):
+            return False
+        # 性别：选「男」。若仍落在折叠线以下就往下滚（手指上滑 2000→900）。
+        for _ in range(5):
+            if tap('男', settle=1.2):
+                return True
+            sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2000', '640', '900',
+               str(SCAN_VELOCITY))
+            time.sleep(SCAN_SETTLE)
+        return False
+    return False
+
+
 def complete_onboarding_for_test():
-    """全新同意/数据删除后的首启会进入五步引导，完成它再测主页面。"""
+    """全新同意/数据删除后的首启会进入六步引导，完成它再测主页面。"""
     if has(dump(), '今日热量'):
         print('    模拟器已有完成引导的用户，保留现有数据并跳过首启引导')
         return True
 
+    # 第 3 步是身体数据表单，必填项不填就点不动「继续」
+    body_values = ['70.5', '178', '33', '21.5']
     sequence = [
         ('你想达成什么', '继续'),
         ('平时的活动量', '继续'),
+        ('你的身体数据', '继续'),
         ('随时掌握进度', '继续'),
         ('你会吃补剂吗', '继续'),
         ('你的生活方式', '开始使用'),
@@ -276,13 +338,17 @@ def complete_onboarding_for_test():
         if not has(nodes, title):
             print(f'    引导步骤未到预期页面：{title}')
             return False
+        if title == '你的身体数据':
+            if not fill_body_data(body_values):
+                print('    身体数据填写失败')
+                return False
         if not tap(cta, settle=3.0 if cta == '开始使用' else 1.0):
             print(f'    引导 CTA 不可用：{cta}（{title}）')
             return False
     if not has(dump(), '今日热量'):
         return False
 
-    # 首次完成引导只写目标/活动量；不得重新引入旧版伪造体征默认值。
+    # 引导应当把用户填的体征写进档案，且**不出现旧版伪造的默认值**。
     if not tap('我的', settle=2.5):
         return False
     scroll_top()
@@ -290,7 +356,11 @@ def complete_onboarding_for_test():
     if any(n['text'] in ('65', '170') for n in profile_nodes):
         print('    首次引导后仍出现旧版体征默认值')
         return False
-    print('    PASS  新用户体重/身高未被预填')
+    entered = [n['text'] for n in profile_nodes if n.get('type') == 'TextInput']
+    if not all(v in entered for v in body_values):
+        print(f'    引导填写的体征未落到档案：{entered}')
+        return False
+    print(f'    PASS  引导填写的体征已落到档案：{body_values}')
     if not tap('今日', settle=2.5):
         return False
     scroll_top()
@@ -666,11 +736,11 @@ def main():
         return 6
     print('    PASS  政策可打开，分项同意后进入应用')
 
-    print('=== 首次使用五步引导 ===')
+    print('=== 首次使用六步引导（含体征手填） ===')
     if not complete_onboarding_for_test():
         print('首次使用引导未完成，已停止后续测试。')
         return 7
-    print('    PASS  五步引导完成并进入今日页')
+    print('    PASS  六步引导完成并进入今日页')
 
     print('=== 本次验证启用本地 AI 演示模式 ===')
     if not enable_demo_mode():

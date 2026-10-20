@@ -11,7 +11,7 @@ import { AppSettings } from '../models/AppSettings';
 import { CalorieEngine } from '../services/CalorieEngine';
 import {
   BodyProfile, Sex, ActivityLevel, GoalMode,
-  activityLabel, modeLabel, sexLabel, MacroTarget
+  activityLabel, modeLabel, sexLabel, MacroTarget, bodyFatPercentText
 } from '../models/Calculation';
 import {
   color, fontSize, space, radius, layout, ThemeMode, themeLabel, pageGradient,
@@ -189,7 +189,7 @@ export struct ProfilePage {
       this.weightInput = p.weightKg > 0 ? String(p.weightKg) : '';
       this.heightInput = p.heightCm > 0 ? String(p.heightCm) : '';
       this.ageInput = p.ageYears > 0 ? String(p.ageYears) : '';
-      this.bodyFatInput = p.bodyFatRatio === null ? '' : (p.bodyFatRatio * 100).toFixed(1);
+      this.bodyFatInput = bodyFatPercentText(p.bodyFatRatio);
       this.sexIndex = ProfilePage.SEX_ORDER.indexOf(p.sex) >= 0
         ? ProfilePage.SEX_ORDER.indexOf(p.sex) : -1;
       this.activityIndex = ProfilePage.ACTIVITY_ORDER.indexOf(p.activity) >= 0
@@ -493,7 +493,11 @@ export struct ProfilePage {
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
               TextInput({ text: this.weightInput })
-                .type(InputType.Number)
+                // 用普通输入框而不是 NUMBER_DECIMAL：本平台的 NUMBER_DECIMAL 会
+                // 吞掉小数点，68.5kg 会显示成 685kg，存回去就成了真实的数据损坏。
+                // 数字格式交给 validateBodyWeight 校验。
+                .type(InputType.Normal)
+                .maxLength(6)
                 .height(layout.inputHeight)
                 .fontSize(fontSize.body)
                 .backgroundColor(color.surfaceMuted)
@@ -550,7 +554,10 @@ export struct ProfilePage {
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
               TextInput({ text: this.bodyFatInput, placeholder: '未知' })
-                .type(InputType.Number)
+                // 同体重：NUMBER_DECIMAL 会吞小数点（22.5 → 225），
+                // 格式与范围由 validateBodyFat 校验。
+                .type(InputType.Normal)
+                .maxLength(5)
                 .height(layout.inputHeight)
                 .fontSize(fontSize.body)
                 .backgroundColor(color.surfaceMuted)

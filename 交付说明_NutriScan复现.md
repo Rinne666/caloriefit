@@ -117,7 +117,7 @@ SDK schema（`hms/toolchains/configcheck/configSchema_rich.json`）对它的描�
 
 | Tab | NutriScan 对应 | CalorieFit 实现 | 状态 |
 |---|---|---|---|
-| 启动/引导 | splash_screen + setup_screen | `OnboardingPage.ets` 5 步 | ✅ 结果真实落库 |
+| 启动/引导 | splash_screen + setup_screen | `OnboardingPage.ets` 6 步 | ✅ 结果真实落库（含体征手填） |
 | 今日 | 个人记录（综合/饮水/断食） | `HomeTabs.ets` 手写分段控件 | ✅ 3 个子页 |
 | 膳食 | Diet Plan（4 个子页） | `DietPlanPage.ets` | ✅ 界面 + 示例数据 |
 | 进度 | Progress（Today/Week/30 Days + Readiness） | `ProgressPage.ets` | ✅ 图表真实数据 / Readiness 占位 |
@@ -131,17 +131,39 @@ SDK schema（`hms/toolchains/configcheck/configSchema_rich.json`）对它的描�
 | 启动页 | splash_screen | 品牌 + 副标题，1.4s 自动进 | — |
 | 1 目标 | 目标选择 | 减脂/维持/增重/重组 药丸单选 | `body_profile.mode` |
 | 2 活动量 | Activity Level | 久坐/轻度/中度/高强度 | `body_profile.activity` |
-| 3 通知 | 通知诱导 | 预览通知卡 + 三条说明（照 flow_02 布局） | — |
-| 4 补剂 | Can you take Nutritional Supplements? | 愿意/不吃 | 引导草稿 |
-| 5 生活方式 | Lifestyle & Feelings | 作息规律 + 外食频率 | 引导草稿 |
+| 3 **身体数据** | setup_screen 的体征采集 | 体重/身高/年龄/性别 手动输入，体脂率可空 | `body_profile` 全字段 |
+| 4 通知 | 通知诱导 | 预览通知卡 + 三条说明（照 flow_02 布局） | — |
+| 5 补剂 | Can you take Nutritional Supplements? | 愿意/不吃 | 引导草稿 |
+| 6 生活方式 | Lifestyle & Feelings | 作息规律 + 外食频率 | 引导草稿 |
 
-引导结束时 `OnboardingService.applyToProfile()` 把目标模式与活动量**真的写进体征档案**，
-直接参与 BMR/TDEE 推导 —— 不是走形式的装饰步骤。模拟器已验证：引导选「增重 / 高强度」后，
-「我的 → 体征档案」里两项同步变化。
+引导结束时 `OnboardingService.applyToProfile()` 把**用户手填的体征**与目标模式、活动量
+**真的写进体征档案**，直接参与 BMR/TDEE 推导 —— 不是走形式的装饰步骤。首次引导还会把
+推导出的目标热量同步为每日热量预算，首页立刻反映用户填的数据。
+
+**体征必填项**（缺一项就推不出 BMR，界面会原地停下并说明缺什么，不会静默跳过）：
+体重、身高、年龄、性别。**体脂率可空** —— 留空则引擎回退 Mifflin-St Jeor 公式
+（与原版只支持 Katch-McArdle 的有意差异）。
+
+**后续修改在「我的 → 体征档案」**：引导填的值会回显在那里，可随时改；改完重算
+BMR/TDEE/目标/宏量。引导**不预填任何虚构体征**（空档案不回退成 65kg/170cm）。
 
 **两处有意不复制**：
 - 语言选择屏 —— 本 App 只发中文，做一屏只能选自己
 - 订阅墙 —— 本项目定价为**完全免费**，不设试用与订阅墙；引导以生活方式收尾（详见 §0.6）
+
+**踩坑：数字输入框不能用 `InputType.NUMBER_DECIMAL`**（2026-10-20 实测）。
+该类型在本平台会**吞掉小数点**：`toFixed(1)` 产出的 "22.0" 回显成 "220"、
+"20.0" 回显成 "200"，手动输入 22.5 变成 "225"。体脂率 220% 存回去就是 2.2，
+超出合法范围后保存直接被拒；而 68.5kg 若被吞成 685 就是**数据损坏**。
+改用 `InputType.Normal` + 项目自己的 `Validators` 校验，并用
+`bodyFatPercentText()` 产出不带尾零小数的文本。相关回归测试见
+`entry/src/ohosTest/ets/test/BodyData.test.ets`。
+
+**踩坑：引导页的键盘避让要用 RESIZE**（2026-10-20 实测）。默认的 `OFFSET`
+只保证**焦点输入框**可见 —— 体重输入框在页面上部，键盘弹起时它本来就可见，
+页面不动，底部的「继续」按钮整个躲在键盘后面且不在 UI 树里，点不到。
+改用 `UIContext.setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)`，并把步骤内容区
+包进 `Scroll`，内容更长时可滚。
 
 ### 2.2 今日页三个个人记录子页
 
@@ -297,7 +319,7 @@ onBackPress(): boolean {
 1. **综合页的轮播条与餐食卡细节**已补：横向提示轮播 + 早/午/晚/加餐四张餐食卡，
    点击进入餐食详情页（本餐热量、占全天预算比例、宏量三片、逐项明细）。
 2. **记录餐食入口**已改为悬浮「+」，四个今日子页均可直接触发。
-3. **引导流程**已做（启动页 + 5 步），但**没有语言选择屏**（本 App 只发中文）
+3. **引导流程**已做（启动页 + 6 步，第 3 步是体征手填），但**没有语言选择屏**（本 App 只发中文）
    与**没有订阅墙**（本项目定价为完全免费，升级/试用入口已整体删除，见 §0.6）。
 4. **AI 拍照识别的 UI 全链路**已补「内置示例图」入口：
    模拟器只有 `/data/local/tmp` 可写、图库塞不进照片，
@@ -382,7 +404,8 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 & $hdc shell aa start -b com.rinne.caloriefit -a EntryAbility
 ```
 
-首次启动会走引导流程（5 步），选择会写进体征档案并直接影响 BMR/TDEE 推导。
+首次启动会走引导流程（6 步），其中第 3 步要手填体重/身高/年龄/性别；
+体征与选择会写进体征档案并直接影响 BMR/TDEE 推导，之后可在「我的 → 体征档案」修改。
 想重看：`我的 → 记录与偏好 → 重看引导流程`。
 
 调试与验证脚本在 `tools/`（**已纳入版本控制，跨平台可用**，路径由 `tools/harmony_paths.py` 按仓库位置反推）：
@@ -412,7 +435,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 | 路由 | 落地页 | 状态 |
 |---|---|---|
 | — | 启动页（品牌 + 1.4s） | ✅ |
-| — | 引导 ×5（目标/活动量/通知/补剂/生活方式） | ✅ 真实落库 |
+| — | 引导 ×6（目标/活动量/身体数据/通知/补剂/生活方式） | ✅ 真实落库 |
 | — | 今日（综合/饮水/断食 子页，单用户个人记录） | ✅ |
 | — | 膳食（膳食计划/购物清单/补剂/生活方式 子页） | ✅ 界面 + 示例数据 |
 | — | 进度（今天/本周/近30天 + Readiness/NutriScore 入口） | ✅ 图表真实，评分占位 |
