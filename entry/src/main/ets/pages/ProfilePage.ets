@@ -934,6 +934,36 @@ export struct ProfilePage {
         .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
         .width('100%')
 
+        // 华为账号入口
+        Row({ space: space.sm }) {
+          Text('👤')
+            .fontSize(20)
+          Column({ space: 2 }) {
+            Text('华为账号')
+              .fontSize(fontSize.body)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(color.text)
+            Text('登录、查看会话与退出登录')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Text('›')
+            .fontSize(fontSize.sectionTitle)
+            .fontColor(color.textHint)
+        }
+        .width('100%')
+        .padding(layout.cardPadding)
+        .linearGradient(glassGradient(color.glassFill))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
+        .onClick(() => {
+          this.navStack.pushPathByName('Account', new Object());
+        })
+
         // AI 设置入口
         Row({ space: space.sm }) {
           Text('🤖')

@@ -10,6 +10,16 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "metadata": [
+      {
+        // 华为账号登录（Account Kit）的 client_id，取自 AGC 控制台
+        // 「项目设置 → 常规 → 应用 → client_id」。
+        // 未配置或仍是占位值时，账号页会明确提示而不会让用户对着系统错误码发愣。
+        // 另：Account Kit 会校验包指纹，调试包必须已签名且指纹与 AGC 登记一致。
+        "name": "client_id",
+        "value": "YOUR_CLIENT_ID_FROM_AGC"
+      }
+    ],
     "requestPermissions": [
       {
         "name": "ohos.permission.INTERNET"

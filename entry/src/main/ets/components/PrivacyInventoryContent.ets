@@ -183,7 +183,7 @@ export struct PrivacyInventoryContent {
           .fontColor(color.text)
           .width('100%')
 
-        Text('本应用不要求注册账号。除下表所列信息外，不收集其他个人信息；所有信息都只保存在本机。')
+        Text('本应用不设自有账号体系，不登录也可完整使用全部记录功能。除下表所列信息外，不收集其他个人信息；所有信息都只保存在本机。')
           .fontSize(fontSize.secondary)
           .fontColor(color.textSecondary)
           .lineHeight(22)

@@ -129,6 +129,11 @@ export const COLLECTED_INFO_LIST: CollectedInfoItem[] = [
     '我的 → AI 食物识别设置',
     '系统安全存储', true),
   new CollectedInfoItem(
+    '华为账号标识：UnionID、OpenID',
+    '识别这是哪台设备上的账号记录；不登录也可完整使用全部记录功能',
+    '我的 → 华为账号（登录后）',
+    '应用本地配置', true),
+  new CollectedInfoItem(
     '外观偏好：主题模式',
     '记住你的界面主题选择',
     '我的 → 外观',
@@ -158,7 +163,13 @@ export const SHARED_INFO_LIST: SharedInfoItem[] = [
     '同接收方',
     '调用鉴权',
     '同上述上传场景',
-    'HTTPS 请求头 Authorization')
+    'HTTPS 请求头 Authorization'),
+  new SharedInfoItem(
+    '华为账号标识：UnionID、OpenID',
+    '华为账号服务（HMS Account Kit）',
+    '完成登录鉴权，向应用返回你的账号标识',
+    '仅在「我的 → 华为账号」中由你主动点击登录后发生；退出登录即撤销',
+    '系统账号组件，凭证不经过本应用')
 ];
 
 /** 第三方 SDK 清单 */

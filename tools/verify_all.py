@@ -613,19 +613,46 @@ def c_privacy_policy():
     nodes = dump()
     if not has(nodes, 'CalorieFit 隐私政策'):
         return False, '隐私政策正文未渲染'
-    # 免责条款在第三节，位于页面上部。Scroll 里视口外的内容不保证进 UI 树，
-    # 所以先在当前位置找，找不到就**往回滚**到顶部再找 —— 往下滚是背离目标的。
-    found = any('医疗建议' in t for t in texts(nodes))
-    for _ in range(6):
-        if found:
-            break
+    # 免责条款在第三节。政策正文很长，第三节可能落在首屏之外；
+    # 往**下**滚找它，找不到再往回滚 —— 只朝一个方向找会漏。
+    def found_disclaimer() -> bool:
+        return any('医疗建议' in t for t in texts(dump()))
+
+    if found_disclaimer():
+        return True, '政策可达，含免责条款'
+    for _ in range(8):
+        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2000', '640', '900', str(SCAN_VELOCITY))
+        time.sleep(SCAN_SETTLE)
+        if found_disclaimer():
+            return True, '政策可达，含免责条款'
+    for _ in range(8):
         sh('shell', 'uitest', 'uiInput', 'swipe', '640', '900', '640', '2100', str(SCAN_VELOCITY))
         time.sleep(SCAN_SETTLE)
-        nodes = dump()
-        found = any('医疗建议' in t for t in texts(nodes))
-    if not found:
-        return False, '隐私政策缺少「不构成医疗建议」的免责条款'
-    return True, '政策可达，含免责条款'
+        if found_disclaimer():
+            return True, '政策可达，含免责条款'
+    return False, '隐私政策缺少「不构成医疗建议」的免责条款'
+
+
+def c_account_login():
+    """华为账号入口可达，且页面处于「未配置」或「已配置」两种合法态之一。
+
+    真正的登录链路需要 AGC 的 client_id + 已签名的包，CI/模拟器上跑不通，
+    所以这里只验**入口与状态机**：入口能进、页面渲染、且要么明确提示
+    client_id 未配置，要么给出登录界面（协议勾选 + 官方按钮）。
+    """
+    if not tap('我的', settle=3.0):
+        return False, '无法进入我的页'
+    scroll_top()
+    ok = find_and_tap('华为账号', max_scroll=25, settle=3.0)
+    if not ok:
+        return False, '「华为账号」入口不可达'
+    nodes = dump()
+    if has(nodes, '尚未配置 client_id'):
+        return True, '入口可达，未配置 client_id 时给出明确提示'
+    required = ('登录华为账号', '我已阅读并同意', '华为账号登录')
+    if not all(has(nodes, t) for t in required):
+        return False, '账号页缺少协议勾选或官方登录按钮'
+    return True, '入口可达，协议勾选与官方登录按钮均已渲染'
 
 
 def c_water_v4_persistence():
@@ -772,6 +799,8 @@ def main():
     check('第三方共享个人信息清单', c_privacy_shared_inventory); shot('v_13_inv_shared')
     back()
     check('隐私政策免责条款', c_privacy_policy); shot('v_14_privacy_policy')
+    back()
+    check('华为账号登录入口', c_account_login); shot('v_15_account')
     back()
 
     print('\n=== V4 饮水/断食表写入与重启持久化 ===')
