@@ -18,6 +18,13 @@
  *      比隔着日志猜可靠得多
  *   3) 打印透明像素占比，量化「背景被抠掉了多少」
  *
+ * ⚠ 运行前提：**必须先 uninstall 再装**，不能直接 `install -r` 覆盖：
+ *   实测 `hdc install -r` 在**同版本覆盖**时不会真正替换 bundle 的资源表 ——
+ *   主包换成最新构建后，测试包里新增的 rawfile 仍然读不到，
+ *   报 `GetRawFileContent failed`。先 `hdc uninstall` 再装测试包
+ *   （ohosTest 是 `deliveryWithInstall: true`，会带上主包）就正常。
+ *   这个坑不只影响测试：改了任何 rawfile 资源后，`install -r` 都可能不生效。
+ *
  * 走的是**降级路径**（region = null → 中心椭圆），因为没有真实模型坐标。
  * 真实链路里坐标由 AI 给出、形状更准；但「区域外被抠成透明」两者共用同一段代码。
  *

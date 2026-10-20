@@ -433,12 +433,33 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 想重看：`我的 → 记录与偏好 → 重看引导流程`。
 
 调试与验证脚本在 `tools/`（**已纳入版本控制，跨平台可用**，路径由 `tools/harmony_paths.py` 按仓库位置反推）：
-- `verify_all.py` —— 一键 UI 回归（11 项）
+- `verify_all.py` —— 一键 UI 回归（14 项）
 - `ui_drive.py` —— 按文本在 UI 树里定位并点击，避免手算坐标点空
 - `verify_privacy_runtime.py` —— 隐私同意 / 凭据持久化 / 删除流程专项
 - `verify_sweep.py` —— 仪器化验证环形扫描动画确实在扫而非跳终值（需要 Pillow）
 - `verify_free_markers.py` —— 定向验证首启同意页政策入口可见性 + 政策全文 + AI 生成显性标识
+- `verify_blackboard.py` —— 今日黑板专项：抠图 → 保存 → 便签墙 → 自动清理本次记录
 - `harmony_paths.py` —— 跨平台路径解析（hdc、仓库根、截图目录），可用 `DEVECO_SDK_HOME` / `HARMONY_HDC` 覆盖
+
+### 9.1 装包有个坑：`install -r` 不一定替换资源
+
+实测 `hdc install -r` 在**同版本覆盖**时**不会真正替换 bundle 的资源表**：
+主包换成最新构建后，测试包里新增的 rawfile 仍然读不到，报
+`GetRawFileContent failed`；而先 `uninstall` 再装就正常。
+
+**这不是测试专属的问题** —— 改了任何 rawfile 资源后，`install -r` 都可能不生效，
+看到的还是旧资源。改完资源类的文件，务必卸载重装：
+
+```bash
+# 跑设备端单测（ohosTest 是 deliveryWithInstall: true，会带上主包）
+hdc uninstall com.rinne.caloriefit
+hdc install entry/build/default/outputs/ohosTest/entry-ohosTest-unsigned.hap
+hdc shell "aa test -b com.rinne.caloriefit -m entry_test -s unittest OpenHarmonyTestRunner -s timeout 180000"
+
+# 只装主包调试同理
+hdc uninstall com.rinne.caloriefit
+hdc install entry/build/default/outputs/default/entry-default-unsigned.hap
+```
 
 截图输出在 `tools/shots/`（不入库）。一次性改造脚本仍留在 `_tools/`（不入库）。
 
