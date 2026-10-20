@@ -3,6 +3,7 @@ import { AppDialogService } from '../services/AppDialogService';
 import { PrivacyConsentService } from '../services/PrivacyConsentService';
 import { PrivacyPolicyContent } from '../components/PrivacyPolicyContent';
 import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
+import { Compliance } from '../common/Compliance';
 
 @Component
 export struct PrivacyConsentPage {
@@ -161,11 +162,13 @@ export struct PrivacyConsentPage {
             .border({ width: layout.borderWidth, color: color.border })
             .borderRadius(radius.card)
 
-            Text('开发预览提示：运营主体、联系方式、AI 服务方完整信息和未成年人规则仍需发布者补齐；此版本不能直接作为正式上架政策。')
-              .fontSize(fontSize.caption)
-              .fontColor(color.food)
-              .lineHeight(20)
-              .width('100%')
+            if (Compliance.isDraft) {
+              Text(`开发预览提示：${Compliance.pendingSummary()}此版本不能直接作为正式上架政策。`)
+                .fontSize(fontSize.caption)
+                .fontColor(color.food)
+                .lineHeight(20)
+                .width('100%')
+            }
           }
           .alignItems(HorizontalAlign.Start)
           .width('100%')

@@ -63,8 +63,8 @@ if has('阅读完整隐私政策', tl):
     check('政策写明计步传感器来源', has('计步传感器', pol))
     # §5（AI 接收方）在折叠线以下，UI 树只含已布局的文本，要滚下去才看得到
     for _ in range(4):
-        V.sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2100', '640', '900', '200')
-        time.sleep(0.8)
+        V.sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2100', '640', '900', str(V.SCAN_VELOCITY))
+        time.sleep(V.SCAN_SETTLE)
         pol = texts()
         if has('百炼', pol):
             break

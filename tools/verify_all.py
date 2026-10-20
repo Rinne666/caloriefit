@@ -38,6 +38,17 @@ HAP = os.path.join(entry_dir(), 'build', 'default', 'outputs', 'default', 'entry
 SWIPE_VELOCITY = 4000
 # 轮播条是横向定点滑动，需要在截图前滑完，速度同样调快，避免拍到动画中途。
 CAROUSEL_VELOCITY = 2000
+#
+# 扫描用的滑动必须**慢**，与 scroll_top 不同：
+#   scroll_top 只求滚到页面顶部，甩过头无妨，所以用最快的 4000；
+#   扫描是"边滚边找目标"，速度一快，惯性 fling 会把目标直接带过采样窗口 ——
+#   表现为"滑了 N 次仍未找到「X」"，而且加长等待也救不回来（见下方实测）。
+# 本机模拟器实测（每种配置各跑 3 次，记录是否命中「全部餐食」）：
+#   4000 + 等 0.5s → 命中 1/3     4000 + 等 1.2s → 命中 2/3
+#   1500 + 等 0.8s → 命中 3/3     1500 + 等 1.2s → 命中 3/3
+# 1500 单次 1.0s，比 4000 的 0.45s 慢，但换来的是确定性。
+SCAN_VELOCITY = 1500
+SCAN_SETTLE = 0.8
 
 
 def sh(*args, timeout=120):
@@ -144,7 +155,9 @@ def scroll_top(times=8):
     for _ in range(times):
         sh('shell', 'uitest', 'uiInput', 'swipe', '640', '900', '640', '2100', str(SWIPE_VELOCITY))
         time.sleep(0.35)
-    time.sleep(0.8)
+    # 末次滑动是带惯性的 fling，手指抬起后内容还在继续往顶部滚。
+    # 不等它停稳就取树，采到的是动画中途的帧 —— 下一轮扫描的第一次取树就会失准。
+    time.sleep(1.2)
 
 
 def home_top():
@@ -301,8 +314,8 @@ def find_and_tap(kw, max_scroll=12, settle=2.5):
                 sh('shell', 'uitest', 'uiInput', 'click', str(c[0]), str(c[1]))
                 time.sleep(settle)
                 return True
-        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2000', '640', '900', str(SWIPE_VELOCITY))
-        time.sleep(0.5)
+        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2000', '640', '900', str(SCAN_VELOCITY))
+        time.sleep(SCAN_SETTLE)
     print(f'    (scroll_and_tap: 滑了 {max_scroll} 次仍未找到「{kw}」)')
     return False
 
@@ -485,6 +498,66 @@ def ensure_today_tab():
     return has(dump(), '今日热量')
 
 
+def c_privacy_collected_inventory():
+    """个人信息保护「已收集个人信息清单」必须可达且有实质内容。
+
+    工信部 292 号文要求双清单在二级菜单展示，应用市场把它列为上架要求。
+    入口若被后续改动删掉，审核会被直接驳回，所以固化成回归项。
+    """
+    if not tap('我的', settle=3.0):
+        return False, '无法进入我的页'
+    scroll_top()
+    ok = find_and_tap('已收集个人信息清单', max_scroll=25, settle=3.0)
+    if not ok:
+        return False, '「已收集个人信息清单」入口不可达'
+    nodes = dump()
+    required = ('已收集个人信息清单', '身体档案', '使用目的', '使用场景', '存储位置')
+    if not all(has(nodes, t) for t in required):
+        return False, '清单页缺少必备字段'
+    return True, '入口可达，采集项逐条标注用途/场景/存储位置'
+
+
+def c_privacy_shared_inventory():
+    """个人信息保护「第三方共享个人信息清单」必须可达且写明接收方。"""
+    if not tap('我的', settle=3.0):
+        return False, '无法进入我的页'
+    scroll_top()
+    ok = find_and_tap('第三方共享个人信息清单', max_scroll=25, settle=3.0)
+    if not ok:
+        return False, '「第三方共享个人信息清单」入口不可达'
+    nodes = dump()
+    required = ('第三方共享个人信息清单', '阿里云百炼', '接收方', '使用目的', '共享方式')
+    if not all(has(nodes, t) for t in required):
+        return False, '共享清单页缺少接收方或共享方式'
+    return True, '入口可达，共享项写明接收方与共享方式'
+
+
+def c_privacy_policy():
+    """隐私政策正文必须含免责条款与待补齐提示。"""
+    if not tap('我的', settle=3.0):
+        return False, '无法进入我的页'
+    scroll_top()
+    ok = find_and_tap('查看隐私政策', max_scroll=25, settle=3.0)
+    if not ok:
+        return False, '「查看隐私政策」入口不可达'
+    nodes = dump()
+    if not has(nodes, 'CalorieFit 隐私政策'):
+        return False, '隐私政策正文未渲染'
+    # 免责条款在第三节，位于页面上部。Scroll 里视口外的内容不保证进 UI 树，
+    # 所以先在当前位置找，找不到就**往回滚**到顶部再找 —— 往下滚是背离目标的。
+    found = any('医疗建议' in t for t in texts(nodes))
+    for _ in range(6):
+        if found:
+            break
+        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '900', '640', '2100', str(SCAN_VELOCITY))
+        time.sleep(SCAN_SETTLE)
+        nodes = dump()
+        found = any('医疗建议' in t for t in texts(nodes))
+    if not found:
+        return False, '隐私政策缺少「不构成医疗建议」的免责条款'
+    return True, '政策可达，含免责条款'
+
+
 def c_water_v4_persistence():
     if not ensure_today_tab() or not tap('饮水', settle=3.0):
         return False, '饮水子页不可达'
@@ -622,6 +695,14 @@ def main():
         # FoodLog 是全屏 NavDestination，不含底部 Tab；先返回到「我的」，
         # 再让后续 V4 检查通过可见的「今日」Tab 进入个人记录子页。
         back()
+
+    print('\n=== 个人信息保护双清单与隐私政策 ===')
+    check('已收集个人信息清单', c_privacy_collected_inventory); shot('v_12_inv_collected')
+    back()
+    check('第三方共享个人信息清单', c_privacy_shared_inventory); shot('v_13_inv_shared')
+    back()
+    check('隐私政策免责条款', c_privacy_policy); shot('v_14_privacy_policy')
+    back()
 
     print('\n=== V4 饮水/断食表写入与重启持久化 ===')
     check('饮水 V4 持久化', c_water_v4_persistence); shot('v_09_water_v4')

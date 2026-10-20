@@ -5,14 +5,21 @@
 
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
+import { Compliance } from '../common/Compliance';
 
 const PREFS_NAME: string = 'caloriefit_privacy';
 const GENERAL_CONSENT_VERSION_KEY: string = 'privacy.general_consent_version';
 const HEALTH_CONSENT_VERSION_KEY: string = 'privacy.health_consent_version';
 const ACCEPTED_AT_KEY: string = 'privacy.accepted_at';
 
-// 发布者填写法定主体、服务方和联系方式后，应同步更新该版本。
-export const PRIVACY_POLICY_VERSION: string = 'draft-2026-10-19-1';
+/**
+ * 隐私政策版本号。
+ *
+ * 单一来源在 common/Compliance.ets —— 隐私政策页展示的版本号与这里必须一致，
+ * 否则会出现「页面显示一个版本、同意记录记的是另一个版本」。
+ * 发布者填写法定主体、服务方和联系方式后，应同步更新该版本。
+ */
+export const PRIVACY_POLICY_VERSION: string = Compliance.POLICY_VERSION;
 
 export class PrivacyConsentService {
   private static store(context: common.UIAbilityContext): preferences.Preferences {

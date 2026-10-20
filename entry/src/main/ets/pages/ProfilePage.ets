@@ -24,6 +24,7 @@ import { YouEntry, Provenance } from '../services/MockContent';
 import { setComingSoon, ComingSoonPage } from '../components/ComingSoonPage';
 import { OnboardingPage } from './OnboardingPage';
 import { PersonalDataService } from '../services/PersonalDataService';
+import { PrivacyInventoryParams } from './PrivacyInventoryPage';
 
 /**
  * 「我的」二级入口清单。
@@ -87,6 +88,17 @@ export struct ProfilePage {
     setComingSoon(e.title, e.subtitle, '原版有实现，本地没有可复现的证据或后端',
       '抓包 / 补后端 / 补算法后即可替换为真实页面', e.provenance);
     this.csVisible = true;
+  }
+
+  /**
+   * 打开个人信息保护「双清单」。
+   *
+   * 工信部信管函〔2021〕292号要求把「已收集个人信息清单」和
+   * 「第三方共享个人信息清单」在 APP 二级菜单中展示，应用市场把它列为
+   * 上架要求，所以这两个入口挂在「数据与隐私」段里，紧邻「查看隐私政策」。
+   */
+  private openInventory(mode: string, title: string): void {
+    this.navStack.pushPathByName('PrivacyInventory', new PrivacyInventoryParams(mode, title));
   }
 
   private statusBadge(status: string): string {
@@ -971,6 +983,29 @@ export struct ProfilePage {
           .borderRadius(radius.large)
           .onClick(() => {
             this.navStack.pushPathByName('PrivacyPolicy', new Object());
+          })
+
+        // 个人信息保护「双清单」：工信部 292 号文要求在二级菜单展示
+        Button('已收集个人信息清单')
+          .width('100%')
+          .height(layout.buttonHeight)
+          .fontSize(fontSize.body)
+          .fontColor(color.primary)
+          .backgroundColor(color.surfaceMuted)
+          .borderRadius(radius.large)
+          .onClick(() => {
+            this.openInventory('collected', '已收集个人信息清单');
+          })
+
+        Button('第三方共享个人信息清单')
+          .width('100%')
+          .height(layout.buttonHeight)
+          .fontSize(fontSize.body)
+          .fontColor(color.primary)
+          .backgroundColor(color.surfaceMuted)
+          .borderRadius(radius.large)
+          .onClick(() => {
+            this.openInventory('shared', '第三方共享个人信息清单');
           })
 
         Button('删除数据并撤回同意')

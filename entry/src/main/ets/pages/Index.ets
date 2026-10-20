@@ -35,6 +35,7 @@ import { OnboardingService } from '../services/OnboardingService';
 import { PrivacyConsentService } from '../services/PrivacyConsentService';
 import { PrivacyConsentPage } from './PrivacyConsentPage';
 import { PrivacyPolicyPage } from './PrivacyPolicyPage';
+import { PrivacyInventoryPage } from './PrivacyInventoryPage';
 import { common } from '@kit.AbilityKit';
 import { color, fontSize, pageGradient } from '../common/DesignTokens';
 import { todayKey } from '../common/DateUtils';
@@ -112,6 +113,11 @@ struct Index {
       AiSettingsPage()
     } else if (name === 'PrivacyPolicy') {
       PrivacyPolicyPage()
+    } else if (name === 'PrivacyInventory') {
+      /**
+       * 个人信息保护「双清单」。根节点是 NavDestination，Navigation 才有对象可挂载。
+       */
+      PrivacyInventoryPage()
     } else if (name === 'FoodLog') {
       /**
        * 全部餐食：从底 Tab 收进二级路由，入口在「我的 → 全部餐食」。
