@@ -1,7 +1,10 @@
 """用 App 里 AI_SYSTEM_PROMPT 的原文 + 真实食物图,验证模型返回是否符合 schema。"""
-import json, urllib.request, base64, sys, io
+import json, urllib.request, base64, sys, io, os
 
-KEY   = "sk-REDACTED-FROM-HISTORY"
+# 密钥一律从环境变量读，**不要写进仓库**。
+# 这个脚本曾把真实 Key 硬编码在第 4 行并提交过（已从 git 历史清除）。
+# 用法：$env:DASHSCOPE_KEY = "sk-..."  然后 python _verify_ai_e2e.py
+KEY   = os.environ.get("DASHSCOPE_KEY", "")
 BASE  = "https://llm-6t68vtlqwy610xvj.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 MODEL = "qwen3.8-omni-flash"
 IMG   = r"C:\Users\18165\Desktop\calories\shots\test_food.jpg"
