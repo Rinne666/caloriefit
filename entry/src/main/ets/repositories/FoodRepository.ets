@@ -6,6 +6,7 @@
 import { relationalStore } from '@kit.ArkData';
 import { Database } from '../database/Database';
 import { FoodLog, FoodLogInput } from '../models/FoodLog';
+import { StickerCutoutService } from '../services/StickerCutoutService';
 
 const TABLE = 'food_log';
 
@@ -47,6 +48,14 @@ function mapRow(rs: relationalStore.ResultSet): FoodLog {
     fatG = rs.getDouble(fIdx);
   }
 
+  // V6：贴纸路径。存量行为 NULL（没有贴纸），不能当成空串 —— 空串会让
+  // Image 去加载一个不存在的相对路径，getPixelMap 直接抛错。
+  let stickerPath: string | null = null;
+  const sIdx = rs.getColumnIndex('sticker_path');
+  if (sIdx >= 0 && rs.getColumnTypeSync(sIdx) !== relationalStore.ColumnType.NULL) {
+    stickerPath = rs.getString(sIdx);
+  }
+
   return new FoodLog(
     rs.getLong(rs.getColumnIndex('id')),
     rs.getString(rs.getColumnIndex('date')),
@@ -62,7 +71,8 @@ function mapRow(rs: relationalStore.ResultSet): FoodLog {
     carbsG,
     fatG,
     rs.getLong(rs.getColumnIndex('created_at')),
-    rs.getLong(rs.getColumnIndex('updated_at'))
+    rs.getLong(rs.getColumnIndex('updated_at')),
+    stickerPath
   );
 }
 
@@ -84,6 +94,7 @@ export class FoodRepository {
       'protein_g': input.proteinG,
       'carbs_g': input.carbsG,
       'fat_g': input.fatG,
+      'sticker_path': input.stickerPath,
       'created_at': now,
       'updated_at': now
     };
@@ -105,6 +116,7 @@ export class FoodRepository {
       'protein_g': input.proteinG,
       'carbs_g': input.carbsG,
       'fat_g': input.fatG,
+      'sticker_path': input.stickerPath,
       'updated_at': Date.now()
     };
     const predicates = new relationalStore.RdbPredicates(TABLE);
@@ -114,9 +126,15 @@ export class FoodRepository {
 
   static async delete(id: number): Promise<void> {
     const store = await Database.ensure();
+    // 先读出这一行的贴纸路径：删行之后贴纸 PNG 就没人引用了，
+    // 不跟着删会变成孤儿文件一直躺在沙箱里。
+    const existing = await FoodRepository.getById(id);
     const predicates = new relationalStore.RdbPredicates(TABLE);
     predicates.equalTo('id', id);
     await store.delete(predicates);
+    if (existing !== null && existing.stickerPath !== null) {
+      await StickerCutoutService.remove(existing.stickerPath);
+    }
   }
 
   static async getById(id: number): Promise<FoodLog | null> {

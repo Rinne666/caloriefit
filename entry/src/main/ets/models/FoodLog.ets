@@ -36,12 +36,17 @@ export class FoodLog {
   fatG: number | null;
   createdAt: number;
   updatedAt: number;
+  /**
+   * V6：抠图后食物贴纸的 PNG 路径（相对 filesDir）。
+   * null 表示这条记录没有贴纸 —— 手动录入的、或抠图失败/未做识别的都属此类。
+   */
+  stickerPath: string | null;
 
   constructor(id: number, date: string, name: string, mealType: number,
     grams: number | null, kcalPer100g: number | null, calories: number,
     entryMode: number, aiConfidence: number | null, aiNotes: string | null,
     proteinG: number | null, carbsG: number | null, fatG: number | null,
-    createdAt: number, updatedAt: number) {
+    createdAt: number, updatedAt: number, stickerPath: string | null) {
     this.id = id;
     this.date = date;
     this.name = name;
@@ -57,6 +62,7 @@ export class FoodLog {
     this.fatG = fatG;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
+    this.stickerPath = stickerPath;
   }
 
   /** 是否记录了完整宏量（三者同时有值） */
@@ -91,11 +97,14 @@ export class FoodLogInput {
   proteinG: number | null;
   carbsG: number | null;
   fatG: number | null;
+  /** V6：抠图后食物贴纸的 PNG 路径（相对 filesDir），无贴纸为 null */
+  stickerPath: string | null;
 
   constructor(date: string, name: string, mealType: number,
     grams: number | null, kcalPer100g: number | null, calories: number,
     entryMode: number, aiConfidence: number | null, aiNotes: string | null,
-    proteinG: number | null, carbsG: number | null, fatG: number | null) {
+    proteinG: number | null, carbsG: number | null, fatG: number | null,
+    stickerPath: string | null) {
     this.date = date;
     this.name = name;
     this.mealType = mealType;
@@ -108,5 +117,6 @@ export class FoodLogInput {
     this.proteinG = proteinG;
     this.carbsG = carbsG;
     this.fatG = fatG;
+    this.stickerPath = stickerPath;
   }
 }

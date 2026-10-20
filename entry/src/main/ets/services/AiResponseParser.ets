@@ -9,6 +9,7 @@
  */
 
 import { AiRecognitionResult } from '../models/AiRecognitionResult';
+import { FoodRegion } from '../models/FoodSticker';
 import {
   AiErrorCode, AiError,
   AI_MACRO_TOLERANCE, AI_MACRO_MAX_G
@@ -85,7 +86,112 @@ export class AiResponseParser {
     }
 
     return new AiRecognitionResult(foodName, kcal, confObj, notes,
-      proteinG, carbsG, fatG, macrosConsistent);
+      proteinG, carbsG, fatG, macrosConsistent,
+      AiResponseParser.readFoodRegion(obj));
+  }
+
+  /**
+   * 读取食物位置（V6）。
+   *
+   * 模型输出约定：
+   *   foodBox     {"x":int,"y":int,"width":int,"height":int}，坐标 0~1000
+   *   foodPolygon [[x,y],[x,y],...]，坐标 0~1000，至少 3 个点
+   *
+   * 位置是**增强字段**，解析失败不能打断识别流程，所以这里全部走「拿不到就 null」
+   * 而不是抛错 —— 拿不到坐标时抠图会退到中心椭圆，而不是不生成贴纸。
+   *
+   * 坐标尺度做了容错：大于 1 视为 0~1000 尺度并除以 1000，
+   * 否则当作已经是 0~1 的比例值。模型两种都出现过。
+   */
+  private static readFoodRegion(obj: Record<string, Object>): FoodRegion | null {
+    let bx = 0;
+    let by = 0;
+    let bw = 0;
+    let bh = 0;
+    let hasBox = false;
+
+    const boxObj = obj['foodBox'];
+    if (boxObj !== null && boxObj !== undefined && !Array.isArray(boxObj)) {
+      const bo = boxObj as Record<string, Object>;
+      const rx = AiResponseParser.readRatio(bo['x']);
+      const ry = AiResponseParser.readRatio(bo['y']);
+      const rw = AiResponseParser.readRatio(bo['width']);
+      const rh = AiResponseParser.readRatio(bo['height']);
+      if (rx !== null && ry !== null && rw !== null && rh !== null && rw > 0 && rh > 0) {
+        bx = rx;
+        by = ry;
+        bw = rw;
+        bh = rh;
+        hasBox = true;
+      }
+    }
+
+    const polygon = AiResponseParser.readPolygon(obj['foodPolygon']);
+    if (!hasBox && polygon === null) {
+      return null;
+    }
+    // 没有外接框但有多边形时，用多边形的包围盒补一个，保证外接框始终可用。
+    if (!hasBox && polygon !== null) {
+      let minX = 1;
+      let minY = 1;
+      let maxX = 0;
+      let maxY = 0;
+      for (let i = 0; i + 1 < polygon.length; i += 2) {
+        minX = Math.min(minX, polygon[i]);
+        minY = Math.min(minY, polygon[i + 1]);
+        maxX = Math.max(maxX, polygon[i]);
+        maxY = Math.max(maxY, polygon[i + 1]);
+      }
+      bx = minX;
+      by = minY;
+      bw = maxX - minX;
+      bh = maxY - minY;
+      hasBox = true;
+    }
+
+    if (!hasBox) {
+      return null;
+    }
+    return new FoodRegion(bx, by, bw, bh, polygon);
+  }
+
+  /** 读一个归一化坐标；返回 null 表示该字段不可用 */
+  private static readRatio(v: Object): number | null {
+    if (typeof v !== 'number' || !isFinite(v)) {
+      return null;
+    }
+    if (v < 0 || v > 1000) {
+      return null;
+    }
+    // 大于 1 视为 0~1000 尺度；否则当作已是 0~1 比例。
+    return v > 1 ? v / 1000 : v;
+  }
+
+  /** 读轮廓顶点数组，压成扁平的 [x1,y1,x2,y2,...] */
+  private static readPolygon(v: Object): number[] | null {
+    if (v === null || v === undefined || !Array.isArray(v)) {
+      return null;
+    }
+    const outer = v as Object[];
+    const pts: number[] = [];
+    for (let i = 0; i < outer.length; i++) {
+      const item = outer[i];
+      if (item === null || item === undefined || !Array.isArray(item)) {
+        continue;
+      }
+      const pair = item as Object[];
+      if (pair.length < 2) {
+        continue;
+      }
+      const px = AiResponseParser.readRatio(pair[0]);
+      const py = AiResponseParser.readRatio(pair[1]);
+      if (px === null || py === null) {
+        continue;
+      }
+      pts.push(px, py);
+    }
+    // 少于 3 个顶点构不成轮廓
+    return pts.length >= 6 ? pts : null;
   }
 
   /**

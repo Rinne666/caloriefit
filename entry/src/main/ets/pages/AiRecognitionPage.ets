@@ -14,7 +14,11 @@ import { AppDialogService } from '../services/AppDialogService';
 import { AiImagePayload } from '../models/AiImagePayload';
 import { AiRecognitionResult } from '../models/AiRecognitionResult';
 import { AiConfig } from '../models/AiConfig';
+import { FoodRegion } from '../models/FoodSticker';
+import { image } from '@kit.ImageKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AiErrorCode, AiError, aiErrorText, AI_LOW_CONFIDENCE } from '../common/AiConstants';
+import { StickerCutoutService } from '../services/StickerCutoutService';
 import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { formatNumber } from '../common/DateUtils';
 
@@ -35,6 +39,8 @@ class AiEditParams {
   proteinG: number | null = null;
   carbsG: number | null = null;
   fatG: number | null = null;
+  /** V6：抠好的食物贴纸（相对 filesDir 的路径），透传给编辑页入库 */
+  stickerPath: string = '';
 }
 
 @Component
@@ -58,6 +64,14 @@ export struct AiRecognitionPage {
   @State busy: boolean = false;
   @State private requestPending: boolean = false;
   @State demoMode: boolean = false;
+  /**
+   * V6：抠好的食物贴纸。
+   * stickerPath 是落盘路径（给编辑页入库）；stickerPreviewUri 是给本页预览的
+   * base64 data URI —— ArkUI 的 Image 解不了沙箱真实路径（见 previewSrc 注释），
+   * 所以显示一律走 data URI。
+   */
+  @State stickerPath: string = '';
+  @State stickerPreviewUri: string = '';
   private requestSeq: number = 0;
 
   private buildParams(p: AiRecognitionParams | null | undefined): void {
@@ -91,6 +105,8 @@ export struct AiRecognitionPage {
       this.photoUri = dst;
       this.previewSrc = $rawfile(SAMPLE_RAW_FILE);
       this.result = null;
+      this.stickerPath = '';
+      this.stickerPreviewUri = '';
       this.hasError = false;
       this.errorMessage = '';
     } catch (e) {
@@ -115,6 +131,8 @@ export struct AiRecognitionPage {
       this.photoUri = uri;
       this.previewSrc = uri;
       this.result = null;
+      this.stickerPath = '';
+      this.stickerPreviewUri = '';
       this.hasError = false;
       this.errorMessage = '';
     } catch (e) {
@@ -138,6 +156,8 @@ export struct AiRecognitionPage {
       this.photoUri = uri;
       this.previewSrc = uri;
       this.result = null;
+      this.stickerPath = '';
+      this.stickerPreviewUri = '';
       this.hasError = false;
       this.errorMessage = '';
     } catch (e) {
@@ -213,6 +233,8 @@ export struct AiRecognitionPage {
         return; // 迟到结果丢弃
       }
       this.result = result;
+      // 抠出食物轮廓贴纸。失败不阻断识别结果 —— 只是这次没有贴纸。
+      await this.makeSticker(result.foodRegion, seq);
     } catch (e) {
       if (seq !== this.requestSeq) {
         return;
@@ -226,12 +248,58 @@ export struct AiRecognitionPage {
     }
   }
 
-  private askForApiKey(): void {
-    AppDialogService.confirm('需要 API Key',
+  private askForApiKey(): void {    AppDialogService.confirm('需要 API Key',
       '尚未配置 AI 服务密钥。是否前往 AI 设置页配置？也可以继续手动录入。',
       '去设置', () => {
         this.navStack.pushPathByName('AiSettings', new Object());
       });
+  }
+
+  /**
+   * 把食物抠成透明背景贴纸。
+   *
+   * 做两件事：落盘一份 PNG（给编辑页入库，路径存库），
+   * 再生成一份 base64 data URI（给本页预览）。
+   *
+   * 为什么要 data URI：ArkUI 的 Image 解不了沙箱里的真实文件路径
+   * （见 previewSrc 上方注释，实测是空白图），只有 data URI / rawfile 两种形式可用。
+   *
+   * 任何一步失败都只影响贴纸，不影响识别结果本身 —— 用户照样能保存这条记录。
+   */
+  private async makeSticker(region: FoodRegion | null, seq: number): Promise<void> {
+    this.stickerPath = '';
+    this.stickerPreviewUri = '';
+    const uri = this.photoUri;
+    if (uri === null) {
+      return;
+    }
+    const t0 = Date.now();
+    try {
+      const cut = await StickerCutoutService.cutoutFromUri(uri, region);
+      try {
+        this.stickerPath = await StickerCutoutService.savePng(cut, StickerCutoutService.newBaseName());
+        const packer = image.createImagePacker();
+        try {
+          const opts: image.PackingOption = { format: 'image/png', quality: 100 };
+          const png = await packer.packToData(cut, opts);
+          this.stickerPreviewUri = StickerCutoutService.toDataUri(png);
+        } finally {
+          packer.release();
+        }
+      } finally {
+        cut.release();
+      }
+      hilog.info(0x0000, 'StickerCutout', 'makeSticker done in %{public}d ms', Date.now() - t0);
+    } catch (_e) {
+      this.stickerPath = '';
+      this.stickerPreviewUri = '';
+      hilog.error(0x0000, 'StickerCutout', 'makeSticker failed after %{public}d ms', Date.now() - t0);
+    }
+    if (seq !== this.requestSeq) {
+      // 识别已被新请求取代，这张贴纸作废
+      this.stickerPath = '';
+      this.stickerPreviewUri = '';
+    }
   }
 
   private useResult(): void {
@@ -240,14 +308,14 @@ export struct AiRecognitionPage {
     }
     const p = new AiEditParams();
     p.mode = 'ai';
-    p.date = this.date;
-    p.name = this.result.foodName;
+    p.date = this.date;    p.name = this.result.foodName;
     p.calories = this.result.estimatedTotalKcal;
     p.aiConfidence = this.result.confidence;
     p.aiNotes = this.result.notes;
     p.proteinG = this.result.proteinG;
     p.carbsG = this.result.carbsG;
     p.fatG = this.result.fatG;
+    p.stickerPath = this.stickerPath;
     this.navStack.pushPathByName('FoodEdit', p);
   }
 
@@ -480,6 +548,49 @@ export struct AiRecognitionPage {
                   .fontSize(fontSize.body)
                   .fontColor(color.text)
                   .width('100%')
+
+                // V6：食物轮廓贴纸预览。
+                // 左原图、右抠出来的贴纸 —— 并排对照才能看出「只保留了食物本身」。
+                if (this.stickerPreviewUri.length > 0) {
+                  Column({ space: 6 }) {
+                    Row({ space: space.md }) {
+                      Column({ space: 4 }) {
+                        Image(this.previewSrc)
+                          .width(92)
+                          .height(92)
+                          .objectFit(ImageFit.Cover)
+                          .borderRadius(12)
+                        Text('原图')
+                          .fontSize(fontSize.caption)
+                          .fontColor(color.textHint)
+                      }
+                      .alignItems(HorizontalAlign.Center)
+
+                      Text('→')
+                        .fontSize(fontSize.sectionTitle)
+                        .fontColor(color.textHint)
+
+                      Column({ space: 4 }) {
+                        // 白色圆角容器 = 贴纸的白边效果
+                        Image(this.stickerPreviewUri)
+                          .width(92)
+                          .height(92)
+                          .objectFit(ImageFit.Contain)
+                          .padding(5)
+                          .backgroundColor('#FFFFFF')
+                          .borderRadius(14)
+                        Text('食物轮廓贴纸')
+                          .fontSize(fontSize.caption)
+                          .fontColor(color.primary)
+                      }
+                      .alignItems(HorizontalAlign.Center)
+                    }
+                    .width('100%')
+                    .justifyContent(FlexAlign.Center)
+                  }
+                  .width('100%')
+                  .padding({ top: space.xs, bottom: space.xs })
+                }
 
                 // 显性标识：内容由 AI 生成，必须同时含「AI」与「生成/合成」，
                 // 且位于生成内容附近（《人工智能生成合成内容标识办法》要求）。

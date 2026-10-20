@@ -349,7 +349,7 @@ export struct ProfilePage {
   private confirmClear(): void {
     this.getUIContext().showAlertDialog({
       title: '清空全部记录',
-      message: '将删除所有日期的饮食、运动、步数、饮水和断食记录；身体档案与目标设置保留。此操作不可撤销。',
+      message: '将删除所有日期的饮食、运动和步数记录；身体档案与目标设置保留。此操作不可撤销。',
       primaryButton: {
         value: '取消',
         action: () => {
@@ -378,7 +378,7 @@ export struct ProfilePage {
   private confirmDeleteLocalData(): void {
     this.getUIContext().showAlertDialog({
       title: '删除健康数据和 AI 配置',
-      message: '将删除身体档案、目标设置、饮食/运动/步数/饮水/断食记录、未完成的引导选择、AI 接口配置和 API Key，并撤回健康信息处理同意。外观偏好保留。此操作不可撤销。',
+      message: '将删除身体档案、目标设置、饮食/运动/步数记录、未完成的引导选择、AI 接口配置和 API Key，并撤回健康信息处理同意。外观偏好保留。此操作不可撤销。',
       primaryButton: {
         value: '取消',
         action: () => {

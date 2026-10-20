@@ -24,6 +24,8 @@ class FoodEditParams {
   proteinG: number | null = null;
   carbsG: number | null = null;
   fatG: number | null = null;
+  /** V6：AI 模式透传的抠图贴纸路径（相对 filesDir）。手动模式为空串。 */
+  stickerPath: string = '';
 }
 
 /**
@@ -66,9 +68,29 @@ export struct FoodEditPage {
   @State fatInput: string = '';
   @State ready: boolean = false;
   private aiConfidence: number = 0;
+  /** V6：抠好的食物贴纸路径（相对 filesDir）。空串表示这条记录没有贴纸。 */
+  @State private stickerPath: string = '';
+  /** 编辑已有 AI 录入记录时为 true —— 决定表单用 AI 形态，但不影响路由 mode */
+  @State private aiForm: boolean = false;
 
   private isAiMode(): boolean {
     return this.mode === 'ai';
+  }
+
+  /**
+   * 表单是否用「AI 整份估算」形态。
+   *
+   * 与 `isAiMode()`（路由意图：从 AI 识别流程新建一条）**不是一回事**：
+   *   · mode === 'ai' → 从 AI 识别页过来，记录还不存在
+   *   · mode === 'edit' + aiForm → 编辑一条**已经存在**的 AI 录入记录
+   *
+   * 这两件事之前被混为一谈：loadRecord() 遇到 AI 记录时把 mode 改成 'ai'，
+   * 结果「编辑食物」页的删除按钮（只在 mode === 'edit' 时显示）被藏掉了 ——
+   * 用户从「全部餐食」点开一条 AI 记录，**删不掉它**，只能退回列表用行末那个
+   * 很小的「删除」文字。表单形态与路由意图必须分开。
+   */
+  private useAiForm(): boolean {
+    return this.mode === 'ai' || this.aiForm;
   }
 
   private applyParams(p: FoodEditParams): void {
@@ -85,6 +107,7 @@ export struct FoodEditPage {
       this.proteinInput = typeof p.proteinG === 'number' ? String(p.proteinG) : '';
       this.carbsInput = typeof p.carbsG === 'number' ? String(p.carbsG) : '';
       this.fatInput = typeof p.fatG === 'number' ? String(p.fatG) : '';
+      this.stickerPath = typeof p.stickerPath === 'string' ? p.stickerPath : '';
       this.ready = true;
     } else if (this.mode === 'edit' && this.recordId > 0) {
       this.loadRecord();
@@ -100,10 +123,13 @@ export struct FoodEditPage {
         this.name = log.name;
         this.mealType = log.mealType;
         if (log.entryMode === 1) {
-          this.mode = 'ai';
+          // 只切换**表单形态**，不改 mode —— mode 决定标题、删除按钮与
+          // 「保存后要 pop 几层」，改成 'ai' 会把编辑态的删除入口弄没。
+          this.aiForm = true;
           this.totalKcalInput = log.calories.toString();
           this.aiConfidence = log.aiConfidence !== null ? log.aiConfidence : 0;
           this.aiNotes = log.aiNotes !== null ? log.aiNotes : '';
+          this.stickerPath = log.stickerPath !== null ? log.stickerPath : '';
         } else {
           this.weightInput = log.grams !== null ? log.grams.toString() : '';
           this.kcalInput = log.kcalPer100g !== null ? log.kcalPer100g.toString() : '';
@@ -185,7 +211,7 @@ export struct FoodEditPage {
       return;
     }
     try {
-      if (this.isAiMode()) {
+      if (this.useAiForm()) {
         // AI 整份估算模式
         const kcal = Number(this.totalKcalInput);
         if (this.totalKcalInput.trim().length === 0 || !isFinite(kcal) ||
@@ -200,7 +226,8 @@ export struct FoodEditPage {
         }
         const input = new FoodLogInput(this.date, this.name.trim(), this.mealType,
           null, null, kcal, 1, this.aiConfidence, this.aiNotes.length > 0 ? this.aiNotes : null,
-          macros.proteinG, macros.carbsG, macros.fatG);
+          macros.proteinG, macros.carbsG, macros.fatG,
+          this.stickerPath.length > 0 ? this.stickerPath : null);
         if (this.recordId > 0) {
           await FoodRepository.update(this.recordId, input);
         } else {
@@ -226,7 +253,8 @@ export struct FoodEditPage {
         }
         const input = new FoodLogInput(this.date, this.name.trim(), this.mealType,
           weightP.value, kcalP.value, calories, 0, null, null,
-          macros.proteinG, macros.carbsG, macros.fatG);
+          macros.proteinG, macros.carbsG, macros.fatG,
+          this.stickerPath.length > 0 ? this.stickerPath : null);
         if (this.mode === 'edit' && this.recordId > 0) {
           await FoodRepository.update(this.recordId, input);
         } else {
@@ -313,7 +341,7 @@ export struct FoodEditPage {
             .alignItems(HorizontalAlign.Start)
             .width('100%')
 
-            if (this.isAiMode()) {
+            if (this.useAiForm()) {
               // AI 整份热量
               Column({ space: space.xs }) {
                 Row({ space: space.sm }) {
@@ -471,7 +499,7 @@ export struct FoodEditPage {
             }
 
             // 保存
-            Button(this.mode === 'edit' ? '保存修改' : (this.isAiMode() ? '确认保存' : '保存记录'))
+            Button(this.mode === 'edit' ? '保存修改' : (this.useAiForm() ? '确认保存' : '保存记录'))
               .width('100%')
               .height(layout.buttonHeight)
               .fontSize(fontSize.body)

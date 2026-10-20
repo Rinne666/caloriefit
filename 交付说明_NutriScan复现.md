@@ -40,11 +40,13 @@
 浅色主题沿用自己的中性色板，页面与卡面同样使用平面材质。
 
 已对齐的部分（实测精确命中）：深色 `#D5EE6E` / `#0A84FF` / `#FF2E63` / `#4CC94E`；
-底 Tab 已补为「图标 + 文字」；进度页已补 `🔥 Streak` 与 `Report`；
-饮水页与原版逐元素对齐（选中态药丸、水瓶、`% completed` 青色、带铅笔的 goal、
-`ml consumed`、M–S 圆环今天描边、250/500 + 自定义、This Week 卡七柱）。
+底 Tab 已补为「图标 + 文字」；进度页已补 `🔥 Streak` 与 `Report`。
 
-导航结构也已按参考截图校正：底栏是五个等宽入口，首页内容区的蓝色「+」为独立悬浮操作，不是中间相机 Tab；对应说明已修正在设计系统文档中。
+导航结构也已按参考截图校正：底栏是等宽入口，首页内容区的蓝色「+」为独立悬浮操作，
+不是中间相机 Tab；对应说明已修正在设计系统文档中。
+
+> 2026-10-20：饮水页与膳食 Tab 已下线（见 §11.7），原先逐元素对齐的饮水页不再存在；
+> 上面这段历史对齐记录保留在此作为还原过程的一部分。
 
 ---
 
@@ -113,13 +115,16 @@ SDK schema（`hms/toolchains/configcheck/configSchema_rich.json`）对它的描�
 
 ## 2. 信息架构对齐情况
 
-### 2.1 底 Tab（5 个，对齐实测路由图）
+### 2.1 底 Tab（4 个）
+
+> **2026-10-20 产品决策：「膳食」Tab 与今日下的「饮水 / 断食」子页下线**，
+> 聚焦「热量记录 + 今日黑板」。已下线的页面代码、Repository 与回归检查项全部删除，
+> 隐私政策与双清单同步改写（详见 §11.7）。
 
 | Tab | NutriScan 对应 | CalorieFit 实现 | 状态 |
 |---|---|---|---|
 | 启动/引导 | splash_screen + setup_screen | `OnboardingPage.ets` 6 步 | ✅ 结果真实落库（含体征手填） |
-| 今日 | 个人记录（综合/饮水/断食） | `HomeTabs.ets` 手写分段控件 | ✅ 3 个子页 |
-| 膳食 | Diet Plan（4 个子页） | `DietPlanPage.ets` | ✅ 界面 + 示例数据 |
+| 今日 | 个人记录 | `HomeTabs.ets` → `HomePage.ets` | ✅ 热量主卡 + 今日黑板入口 |
 | 进度 | Progress（Today/Week/30 Days + Readiness） | `ProgressPage.ets` | ✅ 图表真实数据 / Readiness 占位 |
 | 营养师 | NutriBites（AI 对话） | `NutriBitesPage.ets` | ⚠ 未实现跳转 |
 | 我的 | You（8 个二级入口） | `ProfilePage.ets` | ✅ 入口全立，2 个实页 + 6 个占位 |
@@ -165,13 +170,26 @@ BMR/TDEE/目标/宏量。引导**不预填任何虚构体征**（空档案不回
 改用 `UIContext.setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)`，并把步骤内容区
 包进 `Scroll`，内容更长时可滚。
 
-### 2.2 今日页三个个人记录子页
+### 2.2 今日页
 
-| 子页 | 数据来源 | 状态 |
+2026-10-20 起，今日页不再有那排分段药丸（原「综合 / 饮水 / 断食」）。只剩一个子页时
+分段控件没有切换语义、也白占 74vp 高度，直接渲染内容即可。
+
+| 内容 | 数据来源 | 状态 |
 |---|---|---|
-| 综合 | 真实（已有 `CalorieEngine` / `MacroRepository`） | ✅ |
-| 饮水 | **真实落库**（V4 `water_log`，逐笔可撤销） | ✅ |
-| 断食 | **真实落库**（V4 `fasting_log`，计时与完成标记） | ✅ |
+| 今日热量主卡 | 真实（已有 `CalorieEngine` / `MacroRepository`） | ✅ |
+| 今日黑板入口 | 真实（当日 `food_log` 聚合） | ✅ → `BlackboardPage.ets` |
+
+**已下线的子页**（页面与 Repository 代码已删除，数据库表结构保留）：
+
+| 子页 | 原数据落点 | 现在 |
+|---|---|---|
+| 饮水 | V4 `water_log` | 表保留、无写入路径 |
+| 断食 | V4 `fasting_log` | 表保留、无写入路径 |
+| 膳食（底 Tab） | 无独立表 | 页面已删 |
+
+保留表结构而不是 DROP：已入库的历史数据不丢，迁移链也不用动（删表要写 DROP 迁移，
+收益远小于风险）。「清空全部记录」仍会清理这两张表。
 
 ### 2.3 「我的」二级入口
 
@@ -436,8 +454,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 |---|---|---|
 | — | 启动页（品牌 + 1.4s） | ✅ |
 | — | 引导 ×6（目标/活动量/身体数据/通知/补剂/生活方式） | ✅ 真实落库 |
-| — | 今日（综合/饮水/断食 子页，单用户个人记录） | ✅ |
-| — | 膳食（膳食计划/购物清单/补剂/生活方式 子页） | ✅ 界面 + 示例数据 |
+| — | 今日（热量记录 + 今日黑板入口，单用户个人记录） | ✅ |
 | — | 进度（今天/本周/近30天 + Readiness/NutriScore 入口） | ✅ 图表真实，评分占位 |
 | — | 营养师 | ⚠ 未实现跳转 |
 | — | 我的（含 9 个二级入口 + 重看引导） | ✅ |
@@ -448,6 +465,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 | `AiSettings` | AI 接口设置 | ✅ |
 | `FoodLog` | 全部餐食 | ✅ |
 | `ActivityLog` | 运动记录 | ✅ |
+| `Blackboard` | 今日黑板（便签墙，卡通风格） | ✅ |
 | `ComingSoon` | 未实现占位 | 页内覆盖层实现 |
 
 > 目标页必须以 `NavDestination` 为根节点，否则 Navigation 没有可挂载对象，
@@ -495,7 +513,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 官方判定标准：*"您的 APP 在完全无网络环境下，所有核心功能仍能正常使用，即为单机应用。此类 APP 无需履行备案手续，提交时请在"备案信息"处勾选"单机 APP"。"*
 
 - **能勾单机 APP → 不需要服务器，也不需要 APP 备案。**
-  本项目核心功能（饮食/饮水/运动/步数/进度/体征档案）**全部本地 RDB + preferences**，断网完全可用，符合"完全离线型"。
+  本项目核心功能（饮食/运动/步数/进度/体征档案/今日黑板）**全部本地 RDB + preferences**，断网完全可用，符合"完全离线型"。
 - **不能勾 → 必须做 APP 备案（ICP 备案），且服务器必须在中国大陆。**
   官方明确：*"中国大陆地区开发者的应用，服务器必须在大陆，请选择"APP 服务器在中国大陆"并完成备案。"*
 
@@ -781,6 +799,133 @@ AppGallery 上已有：
 | 设备端单测（`aa test`，真实生产代码） | **Tests run: 36, Failure: 0, Error: 0, Pass: 36, Ignore: 0** |
 | 模拟器 → `dashscope.aliyuncs.com` | DNS 解析 + ping 可达（0% 丢包） |
 | 截图 | `tools/shots/v_01_home.jpeg` … `v_15_account.jpeg` 共 15 张 |
+
+### 11.7 食物轮廓贴纸 + 今日黑板 + 功能收敛（2026-10-20）
+
+本轮三件事一起做完：下线三个功能、新增「食物轮廓贴纸」、新增「今日黑板」。
+
+#### 11.7.1 功能收敛：取消膳食 / 饮水 / 断食
+
+| 动作 | 涉及文件 |
+|---|---|
+| 删页面 | `WaterPage.ets`、`FastingPage.ets`、`DietPlanPage.ets` |
+| 删仓储 | `WaterRepository.ets`、`FastingRepository.ets` |
+| 今日页 | `HomeTabs.ets` 去掉「综合/饮水/断食」分段药丸与 `current` 状态，子页只剩内容本身 |
+| 底 Tab | `Index.ets` 去掉「膳食」，5 个 → 4 个（今日/进度/营养师/我的），索引依次前移 |
+| 回归 | `verify_all.py` 移除「饮水 V4 持久化」「断食首屏还原」「断食 V4 持久化」3 项 |
+| 死代码 | `Constants.DEFAULT_WATER_GOAL_ML`、`DesignTokens.waterAccent` 及两份 `color.json` 里的 `water_accent` |
+
+**数据库表结构刻意保留**：`water_log` / `fasting_log` 与 `app_settings.water_target_ml`
+没有 DROP，理由是——历史数据不丢，迁移链不用动（删表要写 DROP 迁移，收益远小于风险），
+且 V3→V4 迁移必须继续建出这两张表，否则老库的 V4 结构会对不上。表保留但**已无写入路径**，
+「清空全部记录」仍会清理它们。
+
+**`services/MockContent.ets` 保留未删**：饮水/断食/膳食计划三段是原版 NutriScan 的
+**实测证据**（字段名、UI 文案、方案清单），是还原原版时的资产，删了以后要恢复功能
+就得重新去原版里挖。只在文件头标注了「对应功能已下线」。
+
+**合规文案必须同步**（上架硬要求：隐私政策内容要与实际行为一致）。已改：
+`PrivacyInventory` 双清单删掉「饮水记录」「断食记录」两条已收集项与本地字段；
+`PrivacyInventoryContent` / `PrivacyPolicyContent` / `PrivacyConsentPage` /
+`ProfilePage` 的清空确认与同意文案全部去掉饮水断食表述。
+
+#### 11.7.2 食物轮廓贴纸：把食物从照片里抠出来
+
+参考小红书《求一个免费的热量记录App》里 nosh 的形态：食物被抠成带白边的贴纸，
+贴在便签上。当前的实现链路：
+
+```
+用户拍照 → AI 识别（同时返回食物位置）→ 像素级 alpha 遮罩 → 透明背景 PNG
+        → 落沙箱 filesDir/stickers/ → food_log.sticker_path → 便签上显示
+```
+
+**AI 返回位置**：prompt 增加 `foodBox`（外接矩形）与 `foodPolygon`（轮廓顶点），
+坐标 0~1000 整数。解析在 `AiResponseParser.readFoodRegion()` —— 全部走「拿不到就 null」
+的容错策略（模型给不出坐标、给越界坐标、给 0~1 而非 0~1000 尺度，都不打断识别），
+拿不到坐标时抠图退到**中心椭圆**而不是不生成贴纸。11 条解析用例见
+`entry/src/ohosTest/ets/test/FoodRegion.test.ets`。
+
+**三个必须记住的坑**：
+
+1. **ArkUI 的 Canvas 合成模式实测不生效。**
+   SDK 文档列了 `globalCompositeOperation` 的 `destination-out` / `destination-in`，
+   但设备上两版实现都没擦掉任何像素：第一版「填充外部区域 + destination-out 擦除」、
+   第二版「clip + destination-in」，**结果都是原图原样保留**——贴纸等于没抠。
+   最终改成**像素级写 alpha**：Canvas 只负责把原图铺开并读回标准格式像素，
+   之后逐像素按遮罩决定 alpha 是 255 还是 0。完全绕开合成语义，行为确定。
+   > 这个坑的代价是：**流程跑通 ≠ 效果正确**。前两版尺寸对、贴纸生成了、UI 树里也有
+   > Image 节点，只有肉眼看截图才发现背景根本没抠掉。所以补了
+   > `CanvasCutout.test.ets` 的**像素级断言**（保留区内不透明 / 区外透明），
+   > 直接读 alpha 通道判定，不再靠肉眼。
+
+2. **Canvas 坐标是 vp，PixelMap 是像素。**
+   `OffscreenCanvas.width` / `drawImage(PixelMap)` / `getPixelMap` 的参数单位都是 vp
+   （SDK `ets/component/canvas.d.ts` 明确标注 "Default unit: vp"）。把像素值当 vp 用，
+   画布会按 vp 建出约 3.5 倍大的缓冲，取回的只有原图左上角约 1/3.5 那一块 ——
+   表现为「抠出来的贴纸是原图的一角」。必须 `px2vp()` 换算后再进画布。
+
+3. **ArkUI 的 `Image` 解不了沙箱里的真实文件路径。**
+   实测把 `cacheDir` 里的真实路径直接喂给 `Image`，预览区一片空白（文件完好、`fileIo` 也能读）。
+   所以贴纸**落盘**是为了持久化，**显示时一律转 base64 data URI**。
+
+**遮罩形态**：有轮廓多边形 → 扫描线填充（每行求交点、成对填区间，支持任意形状）；
+只有外接框 → **圆角**矩形（四角透明，贴纸感强；硬矩形裁完只是一张普通缩略图）；
+都没有 → 中心椭圆。抠完再裁到实际不透明区域的包围盒，避免贴纸里大片空白。
+
+**落库**：V6 迁移给 `food_log` 加 `sticker_path` 列，用 `ALTER TABLE ADD COLUMN`
+（加可空列是 SQLite 最安全的迁移，不动既有行、不碰 CHECK 约束、不用重建索引）。
+新建库与存量库走同一条路径，不搞「新建库有列、存量库没列」两套结构。
+
+#### 11.7.3 今日黑板：便签墙
+
+黑板页 `BlackboardPage.ets`：木框 + 墨绿板面，顶部粉笔字写当日摄入与剩余额度，
+右下角蹲一只卡通猫（`mascot_cat.svg`），中间是便签墙 —— 每条饮食记录一张便签，
+纸上贴着抠好的食物贴纸 + 食物名 + 热量 + 餐次角标。
+
+便签的歪斜角度与配色由**记录 id 派生**（`ChalkTokens.stickyTilt/stickyColorIndex`），
+不是随机数 —— 刷新页面时便签不该自己转个圈。数据口径直接用 `DailySummaryService`，
+与首页同一份，不另算一套。
+
+美术方向独立成 `common/ChalkTokens.ets`：黑板与便签是固定的木框墨绿 + 彩色便签，
+**不跟随系统深浅色切换**，所以没有并进走资源限定符的 `DesignTokens`（混进去会污染
+那套机制）。深色科技风的首页与其它页面**保持原样**，卡通风只体现在黑板这一页 —— 两者并存。
+
+#### 11.7.4 顺带修掉的三个缺陷
+
+1. **AI 录入的记录之前删不掉。**
+   `FoodEditPage.loadRecord()` 遇到 `entryMode === 1` 的记录时把 `mode` 改成了 `'ai'`，
+   而删除按钮只在 `mode === 'edit'` 时显示 —— 用户从「全部餐食」点开一条 AI 记录，
+   编辑页里**没有删除入口**，只能退回列表用行末那个很小的「删除」文字。
+   现在把**路由意图**（`mode`：从哪来、标题、pop 几层）与**表单形态**
+   （新增 `aiForm`：用「整份热量」还是「重量 + 每 100g」）拆开：编辑已有 AI 记录时
+   表单仍是 AI 形态，但标题是「编辑食物」、删除按钮正常出现、保存只 pop 一层。
+
+2. **删除饮食记录时贴纸 PNG 会变成孤儿文件。**
+   `FoodRepository.delete()` 现在先读出这一行的 `sticker_path`，删行之后一并清掉文件。
+
+3. **黑板页写死「今天」。**
+   现在跟随首页选中的日期（`AppStorage 'selectedDate'`）—— 用户在首页切到哪天，
+   黑板就展示哪天，不然「今天没有记录」会误导成「什么都没记」。
+
+另外回归脚本的「餐食详情页」检查改为兼容**空态与有记录两种状态**，不再依赖
+「当天无记录」这个前提（黑板专项会写一条记录，两者连着跑时原先必然误判）。
+
+**性能**：抠图是逐像素写 alpha，1024×765 原图要跑 78 万次循环，实测慢到
+AI 识别十几秒都出不来结果。贴纸在便签上只有 74vp 宽，所以先降采样到**长边 640**
+再抠（循环量降到约 1/2.5，肉眼看不出差别），并加 hilog 计时。
+抠图是**后台**跑的 —— 识别结果先显示，贴纸稍后补上，用户不用干等。
+
+#### 11.7.5 本轮验证基线
+
+| 项目 | 结果 |
+|---|---|
+| debug 构建 | BUILD SUCCESSFUL（2,980,417 字节 unsigned HAP，删功能后比之前小 208 KB） |
+| 设备端单测 | **Tests run: 51, Failure: 0, Error: 0, Pass: 51**（原 36 + FoodRegion 11 + CanvasCutout 4） |
+| UI 全量回归 `verify_all.py` | **13/13 PASS**（15 − 饮水/断食 3 项 + 黑板页 1 项） |
+| 黑板专项 `verify_blackboard.py` | **14/14 PASS**，覆盖「原图→贴纸」对照、保存入库、便签墙、自动清理 |
+| 抠图耗时 | 降采样到 640 后，抠图 + 裁剪 + 落盘 + Base64 整条链路 **87 ms**（hilog 实测） |
+| 抠图正确性 | 由 `CanvasCutout.test.ets` 的 alpha 像素断言保证，不靠肉眼 |
+| 脚本可重复性 | 黑板专项跑完后 `food_log` 归零，不污染其它回归项 |
 
 ## 12. 真机连接状态（2026-10-19 后续检查）
 

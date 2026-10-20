@@ -2,6 +2,8 @@
  * AI 识别结果与确认后的本地草稿
  */
 
+import { FoodRegion } from './FoodSticker';
+
 export class AiRecognitionResult {
   foodName: string;
   estimatedTotalKcal: number | null;
@@ -16,11 +18,16 @@ export class AiRecognitionResult {
    * false 表示模型给的宏量回算热量与总热量偏差过大，已被丢弃（置 null）
    */
   macrosConsistent: boolean;
+  /**
+   * V6：模型给出的食物位置，用于把食物抠成透明背景贴纸。
+   * null 表示模型没给坐标 —— 抠图会走中心椭圆降级，而不是不做。
+   */
+  foodRegion: FoodRegion | null;
 
   constructor(foodName: string, estimatedTotalKcal: number | null,
     confidence: number, notes: string,
     proteinG: number | null, carbsG: number | null, fatG: number | null,
-    macrosConsistent: boolean) {
+    macrosConsistent: boolean, foodRegion: FoodRegion | null) {
     this.foodName = foodName;
     this.estimatedTotalKcal = estimatedTotalKcal;
     this.confidence = confidence;
@@ -29,6 +36,7 @@ export class AiRecognitionResult {
     this.carbsG = carbsG;
     this.fatG = fatG;
     this.macrosConsistent = macrosConsistent;
+    this.foodRegion = foodRegion;
   }
 
   /** 三者同时有值 */

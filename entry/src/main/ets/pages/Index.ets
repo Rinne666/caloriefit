@@ -3,8 +3,9 @@
  * Navigation 容器内放五个 Tab，编辑页通过 NavPathStack 打开 NavDestination。
  *
  * 底 Tab 结构对齐 NutriScan 实测路由图：
- *   今日（综合/饮水/断食，面向个人记录）
- *   膳食（膳食计划/购物清单/补剂/生活方式）
+ *   今日（热量记录 + 今日黑板，个人记录）
+ *   2026-10-20：原「膳食」Tab 与今日下的「饮水/断食」子页已下线，
+ *   底部收敛为 今日 / 进度 / 营养师 / 我的 四个 Tab。
  *   进度（今天/本周/近30天 + Readiness/NutriScore）
  *   营养师（AI 对话，未实现跳转）
  *   我的
@@ -18,7 +19,6 @@ import { Database } from '../database/Database';
 import { SettingsRepository } from '../repositories/SettingsRepository';
 import { AppSettings } from '../models/AppSettings';
 import { HomeTabs } from './HomeTabs';
-import { DietPlanPage } from './DietPlanPage';
 import { ProgressPage } from './ProgressPage';
 import { NutriBitesPage } from './NutriBitesPage';
 import { ProfilePage } from './ProfilePage';
@@ -37,6 +37,7 @@ import { PrivacyConsentPage } from './PrivacyConsentPage';
 import { PrivacyPolicyPage } from './PrivacyPolicyPage';
 import { PrivacyInventoryPage } from './PrivacyInventoryPage';
 import { AccountPage } from './AccountPage';
+import { BlackboardPage } from './BlackboardPage';
 import { common } from '@kit.AbilityKit';
 import { color, fontSize, pageGradient } from '../common/DesignTokens';
 import { todayKey } from '../common/DateUtils';
@@ -51,7 +52,6 @@ struct Index {
   /** 是否已走过引导。false 时首屏是 OnboardingPage，走完才进主界面 */
   @State onboarded: boolean = false;
   @State private selectedBottomTab: number = 0;
-  @State private todaySubPage: number = 0;
   @StorageLink('privacyConsentAccepted') privacyConsentAccepted: boolean = false;
 
   aboutToAppear(): void {
@@ -124,6 +124,11 @@ struct Index {
        * 华为账号登录。根节点是 NavDestination，Navigation 才有对象可挂载。
        */
       AccountPage()
+    } else if (name === 'Blackboard') {
+      /**
+       * 今日黑板：便签墙展示当天摄入。根节点是 NavDestination。
+       */
+      BlackboardPage()
     } else if (name === 'FoodLog') {
       /**
        * 全部餐食：从底 Tab 收进二级路由，入口在「我的 → 全部餐食」。
@@ -275,35 +280,28 @@ struct Index {
       } else {
         Tabs({ barPosition: BarPosition.End }) {
             TabContent() {
-              HomeTabs({
-                onSubPageChange: (index: number) => {
-                  this.todaySubPage = index;
-                }
-              })
+              HomeTabs()
             }
             .tabBar(this.TabItem('今日', 0))
 
-            TabContent() {
-              DietPlanPage()
-            }
-            .tabBar(this.TabItem('膳食', 1))
-
+            // 2026-10-20：原「膳食」Tab 已下线（产品决策：聚焦热量记录 + 今日黑板），
+            // 底部由 5 个 Tab 收敛为 4 个，下面各 Tab 的索引依次前移一位。
             TabContent() {
               ProgressPage()
             }
-            .tabBar(this.TabItem('进度', 2))
+            .tabBar(this.TabItem('进度', 1))
 
             TabContent() {
               NutriBitesPage()
             }
-            .tabBar(this.TabItem('营养师', 3))
+            .tabBar(this.TabItem('营养师', 2))
 
             TabContent() {
               ProfilePage()
             }
-            .tabBar(this.TabItem('我的', 4))
+            .tabBar(this.TabItem('我的', 3))
           }
-          .barHeight(this.selectedBottomTab === 0 && this.todaySubPage !== 0 ? 0 : 72)
+          .barHeight(72)
           .onChange((index: number) => {
             this.selectedBottomTab = index;
           })

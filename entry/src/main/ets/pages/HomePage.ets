@@ -124,7 +124,7 @@ export struct HomePage {
     return [
       '拍照识别后可核对食物与营养估算',
       '完善体征档案后计算每日营养目标',
-      '饮水与断食记录保存在本机'
+      '记录只保存在本机，不上传服务器'
     ];
   }
 
@@ -440,6 +440,38 @@ export struct HomePage {
         .height(12)
         .justifyContent(FlexAlign.Center)
         .margin({ bottom: space.xs })
+
+        // 今日黑板入口：便签墙展示当天摄入。独立页面，卡通风格，与首页深色体系并存。
+        Row({ space: space.sm }) {
+          Image($r('app.media.mascot_cat'))
+            .width(36)
+            .height(36)
+            .objectFit(ImageFit.Contain)
+
+          Column({ space: 2 }) {
+            Text('今日黑板')
+              .fontSize(fontSize.body)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(color.text)
+            Text('把今天吃的贴成一面便签墙')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(18)
+            .fontColor([color.textHint])
+        }
+        .width('100%')
+        .padding({ left: 12, right: 14, top: 8, bottom: 8 })
+        .backgroundColor(color.surface)
+        .border({ width: 1, color: color.border })
+        .borderRadius(16)
+        .onClick(() => {
+          this.navStack.pushPathByName('Blackboard', new Object());
+        })
 
         // 横向餐食卡：只展示真实录入的名称与热量，不伪造原版截图中的食物照片。
         Column({ space: space.sm }) {

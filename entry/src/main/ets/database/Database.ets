@@ -17,6 +17,7 @@ import { migrateFoodV1ToV2 } from './MigrationV1ToV2';
 import { migrateV2ToV3 } from './MigrationV2ToV3';
 import { migrateV3ToV4 } from './MigrationV3ToV4';
 import { migrateV4ToV5 } from './MigrationV4ToV5';
+import { migrateV5ToV6 } from './MigrationV5ToV6';
 
 const DOMAIN = 0x0001;
 const TAG = 'CalorieFitDB';
@@ -102,9 +103,12 @@ export class Database {
       await migrateV2ToV3(store);
     }
     // V3 → V4 也覆盖全新库，确保饮水/断食表与饮水目标列存在。
+    // 这两张表的功能已下线，但结构保留（见 SchemaV4 头部说明）。
     await migrateV3ToV4(store);
     // V4 → V5 移除旧初始化写入的虚构体征，并允许未填写枚举值。
     await migrateV4ToV5(store);
+    // V5 → V6 增加食物贴纸路径列（新增库与存量库走同一条路径）。
+    await migrateV5ToV6(store);
     store.version = DATABASE_VERSION;
     Database.store = store;
     return store;
@@ -121,7 +125,7 @@ export class Database {
     return Database.appContext;
   }
 
-  /** 清空饮食/运动/步数/饮水/断食记录；保留身体档案、目标设置和 AI 配置 */
+  /** 清空饮食/运动/步数记录；保留身体档案、目标设置和 AI 配置 */
   static async clearAllRecords(): Promise<void> {
     const store = Database.getStore();
     store.beginTransaction();
@@ -130,7 +134,7 @@ export class Database {
       await store.executeSql('DELETE FROM exercise_log');
       await store.executeSql('DELETE FROM daily_activity');
       // V4 新增的两张表也属于「业务记录」，清空时要一并处理，
-      // 否则点完「清空全部记录」后饮水/断食还留着旧数据，
+      // 否则点完「清空全部记录」后已下线的饮水/断食表还留着旧数据，
       // 用户会以为没清成功。
       await store.executeSql('DELETE FROM water_log');
       await store.executeSql('DELETE FROM fasting_log');

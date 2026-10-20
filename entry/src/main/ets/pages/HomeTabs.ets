@@ -1,36 +1,29 @@
 /**
- * 今日页的个人记录子页：综合 / 饮水 / 断食。
+ * 今日页。
  *
  * 产品面向单用户，不提供社群、好友动态或公开资料入口。
- * 子页切换沿用横排图标+文字、选中项带圆角高亮框的样式。
  *
- * ⚠ 这里刻意**不用 Tabs**，而是自己画分段控件 + 条件渲染。
+ * ⚠ 这里刻意**不用 Tabs**，而是直接渲染内容。
  *   原因是踩过的坑：Tabs 套在 Navigation 的底 Tab 里（Tabs → TabContent →
  *   Tabs → TabContent）会静默废掉导航 —— pushPathByName 照常成功、
  *   返回按钮照常出现，但目标页内容节点始终挂不上树，画面全白且日志无任何异常。
  *   实测 FoodEdit 与 ComingSoon 两个目标页同时中招，去掉内层 Tabs 立刻恢复。
- *   而且原版本来就是分段药丸而不是可滑动 Tab，手写控件反而更贴近。
+ *
+ * 2026-10-20：饮水与断食两个子页已下线（产品决策：聚焦「热量记录 + 今日黑板」）。
+ *   原来「综合 / 饮水 / 断食」那排分段药丸随之取消 —— 只剩一个子页时，
+ *   分段控件既没有切换语义、也占掉 74vp 的高度，纯属浪费。
+ *   底部的「+」记录入口随之常驻显示。
  */
 
 import { color, fontSize, space, radius, layout, glassShadow } from '../common/DesignTokens';
 import { HomePage } from './HomePage';
-import { WaterPage } from './WaterPage';
-import { FastingPage } from './FastingPage';
 import { FoodEditParams } from './HomePage';
 import { toDateKey, parseDateKey, isFutureDate, displayDate } from '../common/DateUtils';
-
-const SUB_TABS: string[] = ['综合', '饮水', '断食'];
 
 @Component
 export struct HomeTabs {
   @Consume('navStack') navStack: NavPathStack;
   @StorageLink('selectedDate') selectedDate: string = '';
-  @State private current: number = 0;
-  onSubPageChange: (index: number) => void = (_index: number) => {};
-
-  private tabTint(i: number): ResourceColor {
-    return this.current === i ? color.text : color.textHint;
-  }
 
   private todayLabel(): string {
     const key = this.selectedDate !== '' ? this.selectedDate : toDateKey(new Date());
@@ -78,26 +71,24 @@ export struct HomeTabs {
   @Builder
   TodayHeader() {
     Row({ space: space.xs }) {
-      if (this.current === 0) {
-        Button() {
-          Row({ space: 6 }) {
-            Text('‹')
-              .fontSize(24)
-              .fontColor(color.activity)
-            Text(this.todayLabel())
-              .fontSize(fontSize.body)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(color.text)
-              .maxLines(1)
-          }
+      Button() {
+        Row({ space: 6 }) {
+          Text('‹')
+            .fontSize(24)
+            .fontColor(color.activity)
+          Text(this.todayLabel())
+            .fontSize(fontSize.body)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(color.text)
+            .maxLines(1)
         }
-        .height(36)
-        .padding({ left: 12, right: 14 })
-        .backgroundColor(color.bg)
-        .border({ width: 1, color: color.border })
-        .borderRadius(radius.pill)
-        .onClick(() => this.showDatePicker())
       }
+      .height(36)
+      .padding({ left: 12, right: 14 })
+      .backgroundColor(color.bg)
+      .border({ width: 1, color: color.border })
+      .borderRadius(radius.pill)
+      .onClick(() => this.showDatePicker())
 
       Blank().layoutWeight(1)
 
@@ -107,60 +98,10 @@ export struct HomeTabs {
     .padding({ left: layout.pagePadding, right: layout.pagePadding, top: 8, bottom: 8 })
   }
 
-  /** 三个个人记录子 Tab 使用单色图标，不使用彩色 emoji。 */
-  @Builder
-  SubGlyph(index: number) {
-    if (index === 0) {
-      Image($r('app.media.home_food_bowl'))
-        .width(24)
-        .height(24)
-        .fillColor(this.tabTint(index))
-    } else if (index === 1) {
-      if (this.current === index) {
-        SymbolGlyph($r('sys.symbol.drop_fill'))
-          .fontSize(24)
-          .fontColor([this.tabTint(index)])
-      } else {
-        SymbolGlyph($r('sys.symbol.drop'))
-          .fontSize(24)
-          .fontColor([this.tabTint(index)])
-      }
-    } else if (this.current === index) {
-      SymbolGlyph($r('sys.symbol.stopwatch_fill'))
-        .fontSize(24)
-        .fontColor([this.tabTint(index)])
-    } else {
-      SymbolGlyph($r('sys.symbol.stopwatch'))
-        .fontSize(24)
-        .fontColor([this.tabTint(index)])
-    }
-  }
-
-  @Builder
-  SubBar(label: string, index: number) {
-    Column({ space: 2 }) {
-      this.SubGlyph(index)
-      Text(label)
-        .fontSize(fontSize.secondary)
-        .fontColor(this.tabTint(index))
-        .maxLines(1)
-    }
-    .layoutWeight(1)
-    .height(68)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.current === index ? color.bg : Color.Transparent)
-    .border({ width: this.current === index ? 1 : 0, color: color.border })
-    .borderRadius(20)
-    .onClick(() => {
-      this.current = index;
-      this.onSubPageChange(index);
-    })
-  }
-
   /**
    * 悬浮「+」记录入口 —— 对应原版 Home 的浮动加号。
    *
-   * 只在「综合」页显示；饮水和断食各自提供对应的记录入口。
+   * 原本只在「综合」子页显示；子页取消后它常驻。
    */
   @Builder
   Fab() {
@@ -186,38 +127,12 @@ export struct HomeTabs {
       Column() {
         this.TodayHeader()
 
-        Stack({ alignContent: Alignment.BottomStart }) {
-          Divider()
-            .width('100%')
-            .strokeWidth(1)
-            .color(color.border)
-
-          Row() {
-            ForEach(SUB_TABS, (label: string, i: number) => {
-              this.SubBar(label, i)
-            }, (label: string, i: number) => label + i)
-          }
-          .width('100%')
-          .height(74)
-          .padding({ top: 4, left: 6, right: 6 })
-        }
-        .width('100%')
-        .height(74)
-
-        if (this.current === 0) {
-          HomePage()
-        } else if (this.current === 1) {
-          WaterPage()
-        } else {
-          FastingPage()
-        }
+        HomePage()
       }
       .width('100%')
       .height('100%')
 
-      if (this.current === 0) {
-        this.Fab()
-      }
+      this.Fab()
     }
     .width('100%')
     .height('100%')

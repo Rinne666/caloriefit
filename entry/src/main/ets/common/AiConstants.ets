@@ -38,7 +38,14 @@ export const AI_SYSTEM_PROMPT: string = `你是CalorieFit的食物视觉识别�
 foodName字符串，estimatedTotalKcal整数或null，confidence为0到1之间的数字，
 proteinG整数或null（0到999），carbsG整数或null（0到999），fatG整数或null（0到999），
 notes字符串，控制在60字以内。
-多种食物在foodName中合并命名，热量与宏量均返回整盘合计。`;
+多种食物在foodName中合并命名，热量与宏量均返回整盘合计。
+
+还要给出食物在图片中的位置，用于把食物抠成一张独立贴纸：
+foodBox是食物的外接矩形，foodPolygon是食物的轮廓顶点。
+两者坐标都是相对整张图片的0到1000整数，左上角为(0,0)，x向右、y向下。
+foodBox格式为{"x":整数,"y":整数,"width":整数,"height":整数}。
+foodPolygon格式为[[x,y],[x,y],...]，至少3个点，沿轮廓依次排列；不便给出时可以省略该字段。
+只框食物本身，不要把盘子、桌面、餐具等背景框进去。判断不了位置时foodBox给null。`;
 
 export const AI_USER_PROMPT: string = '请识别这张照片中的食物，估算整份热量与三大宏量（蛋白质/碳水/脂肪），严格按System要求返回JSON。';
 
@@ -108,8 +115,13 @@ export class AiError extends Error {
   }
 }
 
-/** 演示模式注入的固定模拟响应（PM 确认数据，仅用于开发测试，不发网络请求） */
-export const AI_DEMO_RESPONSE: string = '{"foodName":"演示食物（模拟识别）","estimatedTotalKcal":620,"proteinG":38,"carbsG":72,"fatG":19,"confidence":0.85,"notes":"本地演示数据，非真实AI识别结果。仅用于开发测试。"}';
+/**
+ * 演示模式注入的固定模拟响应（PM 确认数据，仅用于开发测试，不发网络请求）。
+ * foodBox 是示例图里**主体食物**（沙拉盘）的位置（0~1000 尺度），
+ * 故意不包含右上角的米饭碗 —— 这样「只保留食物轮廓」的效果一眼可见：
+ * 抠完的贴纸里只剩盘子，右上角是透明的。
+ */
+export const AI_DEMO_RESPONSE: string = '{"foodName":"演示食物（模拟识别）","estimatedTotalKcal":620,"proteinG":38,"carbsG":72,"fatG":19,"confidence":0.85,"notes":"本地演示数据，非真实AI识别结果。仅用于开发测试。","foodBox":{"x":100,"y":200,"width":680,"height":760}}';
 
 /**
  * 宏量一致性容差：Atwater 回算值与总热量的最大相对偏差。

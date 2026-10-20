@@ -1,6 +1,12 @@
 /**
  * Schema V4 —— 饮水 Water + 断食 Fasting
  *
+ * ⚠ 2026-10-20：饮水与断食功能已下线，但**表结构保留** ——
+ *   已入库的历史数据不丢，迁移链也不用动（删表要写 DROP 迁移，
+ *   收益远小于风险）。没有写入路径后这两张表只会被「清空全部记录」清理。
+ *   V3→V4 迁移仍需保留：老库里这两张表要继续存在，新库也要建出来，
+ *   否则 app_settings.water_target_ml 所在的 V4 结构会对不上。
+ *
  * 对齐 NutriScan 首页子页 Water / Fasting（见 services/MockContent.ets 头注释
  * 的实测证据来源）。
  *

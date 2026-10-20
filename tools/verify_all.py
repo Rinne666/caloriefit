@@ -444,8 +444,17 @@ def c_meal_cards():
 
 
 def c_meal_detail():
+    """餐食详情页渲染。
+
+    两种状态都要认：当天这一餐**没有记录**时显示空态，有记录时显示明细。
+    之前只认空态，于是当天一旦有记录就误判 FAIL —— 而 verify_blackboard.py
+    会往当天写一条记录，两者连着跑时必然踩到。回归脚本不该依赖数据状态。
+    """
     nodes = dump()
-    return has(nodes, '餐食详情') and has(nodes, '这一餐还没有记录'), '空餐食详情页标题与空态渲染'
+    empty = has(nodes, '这一餐还没有记录')
+    filled = has(nodes, '蛋白') and has(nodes, '碳水') and has(nodes, '脂肪')
+    ok = has(nodes, '餐食详情') and (empty or filled)
+    return ok, '餐食详情页渲染（空态或已有记录）'
 
 
 def _shot_bytes():
@@ -554,6 +563,22 @@ def relaunch_app():
     return start.returncode == 0
 
 
+def c_blackboard_page():
+    """今日黑板页可达。
+
+    只做只读检查 —— 不写入任何饮食记录，避免污染回归流程的数据状态。
+    需要写入记录的完整链路（抠图 → 保存 → 便签墙）在 verify_blackboard.py 里验。
+    """
+    if not home_top():
+        return False, '无法回到今日首页'
+    if not tap('今日黑板', settle=3.5):
+        return False, '今日黑板入口不可达'
+    nodes = dump()
+    # 超预算时右侧文案会变成「已超出」，两种都要认
+    ok = has(nodes, '今日摄入') and (has(nodes, '还可以吃') or has(nodes, '已超出'))
+    back()
+    return ok, '黑板表头渲染（今日摄入 + 剩余额度）'
+
 def ensure_today_tab():
     """从个人页或子路由回到今日主 Tab，避免误把不可见子页当成产品故障。"""
     for _ in range(5):
@@ -655,68 +680,6 @@ def c_account_login():
     return True, '入口可达，协议勾选与官方登录按钮均已渲染'
 
 
-def c_water_v4_persistence():
-    if not ensure_today_tab() or not tap('饮水', settle=3.0):
-        return False, '饮水子页不可达'
-    nodes = dump()
-    if not has(nodes, 'ml consumed'):
-        return False, '饮水页没有显示累计用量'
-    if not has(nodes, '还没有饮水记录'):
-        return False, 'SKIP: 模拟器已有饮水记录，为避免覆盖或撤销现有记录，跳过空数据持久化测试'
-    before = count_exact(nodes, '250')
-    if before < 1 or not tap('250', settle=2.5):
-        return False, '250 ml 快捷记录不可操作'
-    after_add = dump()
-    if not has(after_add, 'ml consumed') or count_exact(after_add, '250') < before + 1:
-        return False, '新增 250 ml 后总量未更新'
-    if not relaunch_app() or not ensure_today_tab() or not tap('饮水', settle=3.0):
-        return False, '重启后无法返回饮水页'
-    after_restart = dump()
-    if count_exact(after_restart, '250') < before + 1:
-        return False, '重启后没有读回 250 ml 记录'
-    shot('v_09_water_v4_persisted')
-    if not tap('撤销', settle=2.5):
-        return False, '重启后已读回 250 ml，但撤销入口不可操作'
-    after_undo = dump()
-    if not has(after_undo, '还没有饮水记录') or count_exact(after_undo, '250') > before:
-        return False, '撤销本次测试记录后，页面未恢复原始空态'
-    return True, '新装水表可写；重启后读回 250 ml，并成功撤销本次测试记录'
-
-
-def c_fasting_intro():
-    if not tap('断食', settle=3.0):
-        return False, '断食子页不可达'
-    nodes = dump()
-    return (has(nodes, '断食，让每一餐更有节奏') and has(nodes, '选择方案') and
-            not has(nodes, '选择断食方案')), '首屏显示介绍、环形视觉和选择方案入口'
-
-
-def c_fasting_v4_persistence():
-    if not tap('断食', settle=3.0):
-        return False, '断食子页不可达'
-    nodes = dump()
-    if has(nodes, '已坚持'):
-        return False, 'SKIP: 模拟器已有进行中的断食，为避免更改现有计划，跳过持久化写入测试'
-    if not has(nodes, '选择方案') or not tap('选择方案', settle=2.0):
-        return False, '断食介绍页的方案入口不可操作'
-    nodes = dump()
-    if not has(nodes, '选择断食方案') or not has(nodes, '16:8'):
-        return False, '新装状态未渲染断食方案'
-    if not tap('开始', settle=3.0):
-        return False, '断食方案开始入口不可操作'
-    active = dump()
-    if not has(active, '已坚持') or not has(active, '放弃'):
-        return False, '开始后未显示进行中断食状态'
-    if not relaunch_app() or not ensure_today_tab() or not tap('断食', settle=3.0):
-        return False, '重启后无法返回断食页'
-    persisted = dump()
-    if not has(persisted, '已坚持') or not has(persisted, '放弃'):
-        return False, '重启后没有读回进行中断食记录'
-    if not tap('放弃', settle=2.0) or not has(dump(), '选择方案'):
-        return False, '无法清理本次断食测试记录'
-    return True, '新装断食表可写；重启后恢复进行中方案并可结束'
-
-
 def c_ai_sample_flow():
     """示例图完整链路：选图 → 本地演示识别 → 出结果，不发起网络请求。"""
     # 按钮实际文案是「开始 AI 识别」，不是「开始识别」——
@@ -803,10 +766,8 @@ def main():
     check('华为账号登录入口', c_account_login); shot('v_15_account')
     back()
 
-    print('\n=== V4 饮水/断食表写入与重启持久化 ===')
-    check('饮水 V4 持久化', c_water_v4_persistence); shot('v_09_water_v4')
-    check('断食首屏还原', c_fasting_intro); shot('v_10_fasting_intro')
-    check('断食 V4 持久化', c_fasting_v4_persistence); shot('v_11_fasting_v4')
+    check('今日黑板入口与表头', c_blackboard_page); shot('v_16_blackboard')
+
 
     print('\n================ 汇总 ================')
     passed = sum(1 for _, state, _ in RESULTS if state is True)

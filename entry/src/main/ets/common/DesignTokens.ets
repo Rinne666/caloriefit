@@ -27,8 +27,6 @@ export interface ColorTokens {
   activity: ResourceColor;
   activityLight: ResourceColor;
 
-  /** 饮水模块强调色（实测原版用青色系，与运动蓝区分开） */
-  waterAccent: ResourceColor;
   /** 首页热量环的薄荷色亮端，来自 NutriScan 实测配色 */
   calorieMint: ResourceColor;
 
@@ -88,7 +86,6 @@ export const color: ColorTokens = {
   activity: $r('app.color.activity'),
   activityLight: $r('app.color.activity_light'),
 
-  waterAccent: $r('app.color.water_accent'),
   calorieMint: $r('app.color.calorie_mint'),
 
   bg: $r('app.color.bg'),
