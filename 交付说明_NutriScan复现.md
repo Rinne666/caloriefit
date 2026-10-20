@@ -895,7 +895,7 @@ AppGallery 上已有：
 **不跟随系统深浅色切换**，所以没有并进走资源限定符的 `DesignTokens`（混进去会污染
 那套机制）。深色科技风的首页与其它页面**保持原样**，卡通风只体现在黑板这一页 —— 两者并存。
 
-#### 11.7.4 顺带修掉的三个缺陷
+#### 11.7.4 顺带修掉的四个缺陷
 
 1. **AI 录入的记录之前删不掉。**
    `FoodEditPage.loadRecord()` 遇到 `entryMode === 1` 的记录时把 `mode` 改成了 `'ai'`，
@@ -911,6 +911,17 @@ AppGallery 上已有：
 3. **黑板页写死「今天」。**
    现在跟随首页选中的日期（`AppStorage 'selectedDate'`）—— 用户在首页切到哪天，
    黑板就展示哪天，不然「今天没有记录」会误导成「什么都没记」。
+
+4. **保存记录后黑板不刷新（两处数据不同步）。**
+   黑板升为主体后这个问题才显出来：写库方 `bumpRefresh()` 广播 `refreshTick`，
+   `HomePage` / `FoodPage` 都监听了，但**黑板组件没监听** ——
+   结果保存完回到今日页，「今日餐食」已显示新条目，黑板却还是「今天记了 0 条」。
+   `BlackboardView` 现在也挂了 `@StorageLink('refreshTick') @Watch('reload')`。
+
+   > 顺带记一个**假 PASS**：黑板专项里「便签上出现食物名」这一项，在黑板其实
+   > 没刷新时也是 PASS —— 因为下方「今日餐食」卡片里也有同一个菜名，文本匹配
+   > 撞上了。判据被污染才让缺陷潜伏到现在。判据已改成黑板独有的「620 kcal」
+   > （餐食卡不显示热量），并把截图肉眼复核加进来。
 
 另外回归脚本的「餐食详情页」检查改为兼容**空态与有记录两种状态**，不再依赖
 「当天无记录」这个前提（黑板专项会写一条记录，两者连着跑时原先必然误判）。
@@ -978,7 +989,7 @@ rawfile 是**扁平**目录不支持子路径；同 bundle 下**不同模块的�
 | debug 构建 | BUILD SUCCESSFUL（2,921,584 字节 unsigned HAP；半环卡移除后比上一版小 59 KB） |
 | 设备端单测 | **Tests run: 52, Failure: 0, Error: 0, Pass: 52**（原 36 + FoodRegion 11 + CanvasCutout 4 + FoodBatch 1） |
 | UI 全量回归 `verify_all.py` | **14/14 PASS**（13 项 + nosh 式日期胶囊条 1 项） |
-| 黑板专项 `verify_blackboard.py` | **14/14 PASS**，覆盖「原图→贴纸」对照、保存入库、便签墙、自动清理 |
+| 黑板专项 `verify_blackboard.py` | **13/13 PASS**，覆盖「原图→贴纸」对照、保存入库、便签墙、自动清理 |
 | 抠图耗时 | 降采样到 640 后，抠图 + 裁剪 + 落盘 + Base64 整条链路 **87 ms**（hilog 实测） |
 | 抠图正确性 | `CanvasCutout.test.ets` 的 alpha 像素断言 + `FoodBatch.test.ets` 的 6 张真实照片批量断言，不靠肉眼 |
 | 多图验证 | 6 张真实食物照片 6/6 通过（中心 alpha 255 / 角落 alpha 0 / 透明占比 21%），对照图见 `work/cutout-verify/` |

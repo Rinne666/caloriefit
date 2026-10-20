@@ -45,7 +45,14 @@ const WEEK_LABELS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 
 @Component
 export struct BlackboardView {
-  @StorageLink('selectedDate') selectedDate: string = '';
+  /**
+   * 数据刷新广播。写库方（编辑页、全部餐食页）bumpRefresh() 之后，
+   * 黑板必须跟着重载 —— 否则保存完记录回到今日页会出现
+   * 「今日餐食」已显示新条目、黑板却还是旧数据的两处不同步。
+   */
+  @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
+  /** 选中的日期。外部改动时黑板同步重建胶囊条并重载 */
+  @StorageLink('selectedDate') @Watch('onDateChanged') selectedDate: string = '';
   @State summary: DailySummary | null = null;
   @State logs: FoodLog[] = [];
   /** 当日宏量合计（粉笔字那一行用） */
@@ -55,6 +62,12 @@ export struct BlackboardView {
   @State chips: DateChip[] = [];
 
   aboutToAppear(): void {
+    this.buildChips();
+    this.reload();
+  }
+
+  /** 外部改了日期：重建胶囊条并重载 */
+  private onDateChanged(): void {
     this.buildChips();
     this.reload();
   }
@@ -145,10 +158,9 @@ export struct BlackboardView {
     if (key === this.selectedDate) {
       return;
     }
+    // 只改 AppStorage 即可 —— @StorageLink('selectedDate') 的 @Watch 会
+    // 触发 onDateChanged（重建胶囊条 + 重载）。这里再手动调一遍就是重复加载。
     AppStorage.setOrCreate<string>('selectedDate', key);
-    this.selectedDate = key;
-    this.buildChips();
-    this.reload();
   }
 
   build() {
