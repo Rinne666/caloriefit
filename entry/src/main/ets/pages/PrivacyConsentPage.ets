@@ -119,7 +119,7 @@ export struct PrivacyConsentPage {
                 .fontSize(fontSize.sectionTitle)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(color.text)
-              Text('你主动填写的身体档案、目标，以及主动添加的饮食、运动、饮水和断食记录，用于热量计算与记录统计。当前版本不需要账号，也不把这些本地记录同步到开发者服务器。')
+              Text('你主动填写的身体档案、目标，以及主动添加的饮食、运动、饮水和断食记录，用于热量计算与记录统计。你在运动页主动开启计步采集后，当日步数会从设备计步传感器读入并保存在本机。当前版本不需要账号，也不把这些本地记录同步到开发者服务器。')
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
                 .lineHeight(23)
