@@ -7,6 +7,7 @@ entry/oh_modules/
 oh_modules/
 local.properties
 .idea/
+.venv/
 *.hap
 *.har
 screenshots/

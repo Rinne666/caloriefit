@@ -32,6 +32,13 @@ BUNDLE = "com.rinne.caloriefit"
 ABILITY = "EntryAbility"
 HAP = os.path.join(entry_dir(), 'build', 'default', 'outputs', 'default', 'entry-default-unsigned.hap')
 
+# `uitest uiInput swipe` 的第 5 个参数是**速度**（200~40000，默认 600），不是时长。
+# 原脚本传 250（最慢档），1200px 的一次滚动要约 4.8 秒，一轮回归里几十次滚动
+# 会把整轮拖成十几分钟，表现为"脚本卡住不动"。本机实测：250 → 5.9s，4000 → 0.45s。
+SWIPE_VELOCITY = 4000
+# 轮播条是横向定点滑动，需要在截图前滑完，速度同样调快，避免拍到动画中途。
+CAROUSEL_VELOCITY = 2000
+
 
 def sh(*args, timeout=120):
     return subprocess.run([HDC] + list(args), capture_output=True, text=True, timeout=timeout)
@@ -127,9 +134,15 @@ def back():
 
 
 def scroll_top(times=8):
-    """把页面滚回顶部。"""
+    """把页面滚回顶部。
+
+    速度参数说明：`uitest uiInput swipe <x1> <y1> <x2> <y2> [velocity]` 的
+    第 5 个参数是**速度**（200~40000，默认 600），不是时长。
+    写 250 等于最慢速滑动，1200px 要走约 4.8 秒，一次滚动就拖垮整轮回归
+    （本机实测：velocity 250 → 5.9s/次，4000 → 0.45s/次）。
+    """
     for _ in range(times):
-        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '900', '640', '2100', '250')
+        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '900', '640', '2100', str(SWIPE_VELOCITY))
         time.sleep(0.35)
     time.sleep(0.8)
 
@@ -288,7 +301,7 @@ def find_and_tap(kw, max_scroll=12, settle=2.5):
                 sh('shell', 'uitest', 'uiInput', 'click', str(c[0]), str(c[1]))
                 time.sleep(settle)
                 return True
-        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2000', '640', '900', '300')
+        sh('shell', 'uitest', 'uiInput', 'swipe', '640', '2000', '640', '900', str(SWIPE_VELOCITY))
         time.sleep(0.5)
     print(f'    (scroll_and_tap: 滑了 {max_scroll} 次仍未找到「{kw}」)')
     return False
@@ -354,9 +367,22 @@ def c_meal_detail():
 
 def _shot_bytes():
     sh('shell', 'snapshot_display', '-f', '/data/local/tmp/c.jpeg')
-    sh('file', 'recv', '/data/local/tmp/c.jpeg', r'C:\Users\18165\Desktop\calories\_tools\_c.jpeg')
-    with open(r'C:\Users\18165\Desktop\calories\_tools\_c.jpeg', 'rb') as f:
+    local = repo_path('tools', '_c.jpeg')
+    sh('file', 'recv', '/data/local/tmp/c.jpeg', local)
+    with open(local, 'rb') as f:
         return f.read()
+
+
+def _pixels(img):
+    """取灰度图的像素序列。
+
+    Pillow 13 起 `getdata()` 被标记弃用（2027-10-15 移除），改用
+    `get_flattened_data()`；老版本 Pillow 没有这个方法，回退到 getdata()。
+    """
+    getter = getattr(img, 'get_flattened_data', None)
+    if getter is not None:
+        return getter()
+    return img.getdata()
 
 
 def c_carousel():
@@ -386,7 +412,7 @@ def c_carousel():
 
     before = Image.open(io.BytesIO(_shot_bytes())).convert('RGB')
 
-    sh('shell', 'uitest', 'uiInput', 'swipe', '1000', str(y), '200', str(y), '300')
+    sh('shell', 'uitest', 'uiInput', 'swipe', '1000', str(y), '200', str(y), str(CAROUSEL_VELOCITY))
     time.sleep(1.8)
 
     after = Image.open(io.BytesIO(_shot_bytes())).convert('RGB')
@@ -396,7 +422,7 @@ def c_carousel():
     # 主卡标题与其背景保持静止，用它识别滑动是否误触发了外层纵向 Scroll。
     anchor = (0, max(0, hero_y - 60), before.size[0], min(before.size[1], hero_y + 60))
     anchor_diff = ImageChops.difference(before.crop(anchor), after.crop(anchor)).convert('L')
-    anchor_changed = sum(1 for px in anchor_diff.getdata() if px > 12)
+    anchor_changed = sum(1 for px in _pixels(anchor_diff) if px > 12)
     anchor_ratio = anchor_changed / max(1, (anchor[2] - anchor[0]) * (anchor[3] - anchor[1]))
     print(f'    主卡锚点变化率 {anchor_ratio*100:.2f}%')
     if anchor_ratio > 0.02:
@@ -405,7 +431,7 @@ def c_carousel():
     # 只取轮播条所在横带：避开上下会变的日期/数字
     band = (0, max(0, y - 45), before.size[0], min(before.size[1], y + 45))
     diff = ImageChops.difference(before.crop(band), after.crop(band))
-    changed = sum(1 for px in diff.convert('L').getdata() if px > 12)
+    changed = sum(1 for px in _pixels(diff.convert('L')) if px > 12)
     total = band[3] - band[1]
     ratio = changed / max(1, (band[2] - band[0]) * total)
     print(f'    横带像素变化率 {ratio*100:.1f}%')

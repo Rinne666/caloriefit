@@ -6,6 +6,7 @@
 import { DailySummaryService } from '../services/DailySummaryService';
 import { anim } from '../common/Motion';
 import { DailySummary } from '../models/DailySummary';
+import { stepSourceLabel } from '../models/DailyActivity';
 import { AnimatedRing } from '../components/AnimatedRing';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { MetricCard } from '../components/MetricCard';
@@ -515,7 +516,7 @@ export struct HomePage {
                 this.summary !== null ? this.summary.steps : 0,
                 this.summary !== null ? this.summary.stepsGoal : 8000),
               barColor: color.activity,
-              sourceLabel: '手动模拟',
+              sourceLabel: stepSourceLabel(this.summary !== null ? this.summary.stepSource : ''),
               goalText: `目标 ${formatNumber(this.summary !== null ? this.summary.stepsGoal : 8000)} 步`
             })
           }

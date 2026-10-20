@@ -23,7 +23,7 @@ import {
   color, fontSize, space, radius, layout, pageGradient,
   toneVeil, glass, glassGradient, glassShadow
 } from '../common/DesignTokens';
-import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
+import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber, todayKey } from '../common/DateUtils';
 import { EXERCISE_LABELS } from '../common/Constants';
 import { CalorieService } from '../services/CalorieService';
 import { validateSteps } from '../common/Validators';
@@ -59,6 +59,16 @@ export struct ActivityPage {
   @State stepSource: string = '';
   /** 传感器状态机的可读描述 */
   @State sensorStatusText: string = '';
+  /**
+   * 传感器状态的 @State 镜像。
+   *
+   * 为什么必须有这个：StepSensorService.status 是**普通静态字段**，
+   * ArkUI 的依赖收集只认 @State —— 状态变了界面不会重算。
+   * 实测（模拟器授权计步权限后）：传感器已经 running 并把数据写进库了，
+   * 标签却一直停在「待授权」，按钮也一直显示「开启自动采集」，
+   * 用户完全看不出采集已经开始。状态必须经 @State 驱动界面刷新。
+   */
+  @State sensorStatus: StepSensorStatus = StepSensorStatus.IDLE;
   /** 最近一次基线重建的原因 */
   @State sensorReason: string = '';
 
@@ -80,10 +90,35 @@ export struct ActivityPage {
     if (this.stepSource === STEP_SOURCE_MANUAL) {
       return;
     }
+    // 传感器只写今天。正在看别的日期时，不能把今天的步数盖到那一天上，
+    // 也不能覆盖用户正在输入框里写的数。
+    if (this.selectedDate !== todayKey()) {
+      this.sensorStatus = StepSensorService.getStatus();
+      return;
+    }
     this.steps = value;
     this.stepsInput = value.toString();
     this.sensorReason = StepSensorService.getLastReason();
+    this.sensorStatus = StepSensorService.getStatus();
+    this.sensorStatusText = StepSensorService.getStatusDetail();
+    this.refreshStepSource();
   };
+
+  /**
+   * 传感器写库后，来源角标要从「未采集」变成「传感器自动」。
+   *
+   * 来源以库里的行为准，而不是猜：当天被用户手动校正过时，
+   * setSensorSteps 会拒绝写入，库里的 source 仍是 manual，
+   * 角标就应继续显示「手动校正」。
+   */
+  private async refreshStepSource(): Promise<void> {
+    try {
+      const activity = await ActivityRepository.getByDate(this.selectedDate);
+      this.stepSource = activity !== null ? activity.source : '';
+    } catch (e) {
+      // 读失败保持原值
+    }
+  }
 
   /** 读取 Ability 上下文；拿不到就放弃传感器（不影响手动功能） */
   private abilityContext(): common.UIAbilityContext | null {
@@ -102,9 +137,11 @@ export struct ActivityPage {
     const ctx = this.abilityContext();
     if (ctx === null) {
       this.sensorStatusText = '无法获取应用上下文';
+      this.sensorStatus = StepSensorStatus.ERROR;
       return;
     }
     const status = await StepSensorService.start(ctx, requestPermission);
+    this.sensorStatus = status;
     this.sensorStatusText = StepSensorService.getStatusDetail();
     if (status === StepSensorStatus.RUNNING) {
       this.sensorReason = StepSensorService.getLastReason();
@@ -212,6 +249,8 @@ export struct ActivityPage {
       this.steps = 0;
       this.stepsInput = '0';
       this.sensorReason = StepSensorService.getLastReason();
+      this.sensorStatus = StepSensorService.getStatus();
+      this.sensorStatusText = StepSensorService.getStatusDetail();
       this.bumpRefresh();
       this.getUIContext().getPromptAction().showToast({ message: '已重新校准，今日步数从 0 开始' });
     } else {
@@ -220,7 +259,8 @@ export struct ActivityPage {
   }
 
   /** 传感器状态的短标签 */
-  private sensorStatusLabel(): string {    const s = StepSensorService.getStatus();
+  private sensorStatusLabel(): string {
+    const s = this.sensorStatus;
     if (s === StepSensorStatus.RUNNING) {
       return '已开启';
     }
@@ -240,7 +280,7 @@ export struct ActivityPage {
   }
 
   private sensorStatusColor(): ResourceColor {
-    const s = StepSensorService.getStatus();
+    const s = this.sensorStatus;
     if (s === StepSensorStatus.RUNNING) {
       return color.primary;
     }
@@ -391,7 +431,7 @@ export struct ActivityPage {
               .onClick(() => {
                 this.restoreAutoSteps();
               })
-          } else if (StepSensorService.getStatus() === StepSensorStatus.RUNNING) {
+          } else if (this.sensorStatus === StepSensorStatus.RUNNING) {
             // 已经在采集了，这时再放「开启自动采集」是个骗人的死按钮。
             // 给一个真实存在的动作：把当前累计值当作今日零点，重新起算。
             Button('重新校准今日步数')

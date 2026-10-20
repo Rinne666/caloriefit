@@ -12,6 +12,7 @@
     python -u ui_drive.py probe "假期模式"     # 只打印 bounds，不点
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -29,6 +30,9 @@ except Exception:
 HDC = hdc_path()
 DEV = "/data/local/tmp"
 SHOTS = shots_dir()
+# UI 树的本地落盘位置。原先 recv 写到 tools/ 而 open 读的是写死的
+# C:\Users\18165\Desktop\calories\_tools\，两边对不上，跨平台必挂。
+TREE = repo_path('tools', '_t.json')
 
 
 def sh(*args, timeout=120):
@@ -45,9 +49,9 @@ def dump(retries=3):
     last = None
     for attempt in range(retries):
         sh("shell", "uitest", "dumpLayout", "-p", f"{DEV}/t.json")
-        sh("file", "recv", f"{DEV}/t.json", repo_path('tools', '_t.json'))
+        sh("file", "recv", f"{DEV}/t.json", TREE)
         try:
-            with open(r"C:\Users\18165\Desktop\calories\_tools\_t.json", "r", encoding="utf-8") as f:
+            with open(TREE, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as e:      # 空文件 / 半截文件都走这里
             last = e
@@ -123,7 +127,7 @@ def main():
     if cmd == "shot":
         name = sys.argv[2]
         sh("shell", "snapshot_display", "-f", f"{DEV}/s.jpeg")
-        sh("file", "recv", f"{DEV}/s.jpeg", f"{SHOTS}\\{name}.jpeg")
+        sh("file", "recv", f"{DEV}/s.jpeg", os.path.join(SHOTS, f"{name}.jpeg"))
         print(f"saved {name}.jpeg")
         return 0
 
