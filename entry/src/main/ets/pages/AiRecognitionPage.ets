@@ -447,7 +447,7 @@ export struct AiRecognitionPage {
                   .fontWeight(FontWeight.Bold)
                   .fontColor(color.text)
                   .layoutWeight(1)
-                Text('AI 估算')
+                Text('AI 生成估算')
                   .fontSize(fontSize.caption)
                   .fontColor(color.primary)
                   .backgroundColor(color.primaryLight)
@@ -479,6 +479,14 @@ export struct AiRecognitionPage {
                 Text(this.result.foodName)
                   .fontSize(fontSize.body)
                   .fontColor(color.text)
+                  .width('100%')
+
+                // 显性标识：内容由 AI 生成，必须同时含「AI」与「生成/合成」，
+                // 且位于生成内容附近（《人工智能生成合成内容标识办法》要求）。
+                // 放在食物名正下方而不是卡片末尾 —— 末尾会被折叠线挡住，等于没有。
+                Text('以上食物名称、热量与宏量均为 AI 生成，仅供参考')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
                   .width('100%')
 
                 // V3：三大宏量估算

@@ -216,7 +216,7 @@ SDK schema（`hms/toolchains/configcheck/configSchema_rich.json`）对它的描�
 
 ### 5.3 点击坐标必须从 UI 树取
 `uitest dumpLayout` 给的 bounds 才是准的。手算坐标在滚动后会落空，
-本轮排查一度被"点空了"带偏。工具见 `_tools/ui_drive.py`（按文本定位并点击）。
+本轮排查一度被"点空了"带偏。工具见 `tools/ui_drive.py`（按文本定位并点击）。
 
 ### 5.4 ArkTS 装饰器/成员名与内置组件冲突
 `onAppear`、`size` 是 `CustomComponent` 上已有的属性，自定义同名方法直接编译失败；
@@ -247,6 +247,37 @@ API 23 起报 `The V1 decorator '@Prop' cannot be applied to a Function-type var
    声明在 module.json5 之外，还必须运行时 `requestPermissionsFromUser` 申请，
    否则 `sensor.on` 直接抛 201。
 
+### 5.8 页内浮层不接管返回键 → 按返回直接退出应用
+
+首启同意页的「隐私政策」是**页内浮层**（`@State showPolicy`），不是 NavDestination。
+没接管返回键时，用户在政策页按系统返回 → **整个应用被退出**，同意流程被打断，
+得重新冷启动。修法是在组件上加：
+
+```typescript
+onBackPress(): boolean {
+  if (this.showPolicy) {
+    this.showPolicy = false;
+    return true;   // 已处理，系统不再往下传
+  }
+  return false;
+}
+```
+
+推论：**凡是页内浮层（`@State` 切换的那种），都要自己实现 `onBackPress`。**
+用 NavDestination 承载的页面不用管，系统返回天然有效。
+
+### 5.9 `Scroll` 里折叠线以下的文本不在 UI 树里
+
+`uitest dumpLayout` 只返回**已布局**的节点，滚动区域里视口外的内容不出现。
+本轮两次踩到：
+- 首启同意页正文加长后，「阅读完整隐私政策」按钮被挤到折叠线以下 → UI 树里找不到它，
+  自动化判成「政策不可达」，而用户其实得滚动才能看到。
+- 隐私政策页的「五、AI 食物识别与第三方接收方」在页面下方 → 校验脚本查「百炼」查不到，
+  误判成「政策没写」，实际截图里那节内容是好的。
+
+**所以：`Scroll` 页面里校验靠下的内容，必须先滚动再取树。**
+另外，重要入口不该依赖正文长度 —— 政策入口已从正文下方**上移到首屏固定位置**。
+
 ---
 
 ## 6. 验证方式
@@ -275,7 +306,7 @@ API 23 起报 `The V1 decorator '@Prop' cannot be applied to a Function-type var
 
 ## 8. ✅ 验证记录（模拟器恢复后已全部补验）
 
-`_tools/verify_all.py` 一键跑完，**8/8 PASS**：
+`tools/verify_all.py` 一键跑完，**8/8 PASS**：
 
 | 检查项 | 结果 |
 |---|---|
@@ -306,7 +337,7 @@ API 23 起报 `The V1 decorator '@Prop' cannot be applied to a Function-type var
 
 本轮在当前构建上重新运行完整流程，**8/8 PASS**。轮播项不再以“滚动容器中找不到首条文案”判定，而是比较提示条区域与首页独立锚点：提示条区域变化 **32.2%**，纵向锚点变化 **0.00%**，确认是横向移动而非页面纵向滚动。页面检查会先回到首页顶部；AI 与餐食路由还会断言目标页内容，不以点击成功代替页面验证。
 
-AI 示例图流程在会话级演示模式下完成，结果明确显示「演示食物（模拟识别）」；该流程没有发起网络请求。8 项截图位于本地 `work/nutriscan-ui-fidelity-20261019/evidence/` 和 `_tools/shots/`。
+AI 示例图流程在会话级演示模式下完成，结果明确显示「演示食物（模拟识别）」；该流程没有发起网络请求。8 项截图位于本地 `work/nutriscan-ui-fidelity-20261019/evidence/` 和 `tools/shots/`。
 
 本轮也修复了一个主题冷启动问题：此前已保存深色偏好时，模拟器冷启动仍会先显示浅色资源；现在 `EntryAbility` 页面加载完成后通过 `UIAbilityContext` 恢复 ColorMode，冷启动深色界面已确认生效。相关 API 约束见[华为 UIAbilityContext API 文档](https://developer.huawei.com/consumer/cn/doc/doccenter-references/api/js-apis-inner-application-uiabilitycontext)。
 
@@ -354,14 +385,20 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 首次启动会走引导流程（5 步），选择会写进体征档案并直接影响 BMR/TDEE 推导。
 想重看：`我的 → 记录与偏好 → 重看引导流程`。
 
-调试辅助脚本在 `_tools/`（不入库）：
+调试与验证脚本在 `tools/`（**已纳入版本控制，跨平台可用**，路径由 `tools/harmony_paths.py` 按仓库位置反推）：
+- `verify_all.py` —— 一键 UI 回归（11 项）
 - `ui_drive.py` —— 按文本在 UI 树里定位并点击，避免手算坐标点空
-- `verify_sweep.py` —— 仪器化验证环形扫描动画确实在扫而非跳终值
-- `shrink_sample.py` —— 压缩内置示例图
+- `verify_privacy_runtime.py` —— 隐私同意 / 凭据持久化 / 删除流程专项
+- `verify_sweep.py` —— 仪器化验证环形扫描动画确实在扫而非跳终值（需要 Pillow）
+- `verify_free_markers.py` —— 定向验证首启同意页政策入口可见性 + 政策全文 + AI 生成显性标识
+- `harmony_paths.py` —— 跨平台路径解析（hdc、仓库根、截图目录），可用 `DEVECO_SDK_HOME` / `HARMONY_HDC` 覆盖
+
+截图输出在 `tools/shots/`（不入库）。一次性改造脚本仍留在 `_tools/`（不入库）。
 
 跑单元测试（真实生产代码，22/22）：
 
 ```powershell
+# Windows
 & "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat" `
   --mode module -p product=default -p module=entry@ohosTest -p buildMode=debug assembleHap --no-daemon
 & $hdc install -r entry\build\default\outputs\ohosTest\entry-ohosTest-unsigned.hap
@@ -457,15 +494,59 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 
 #### AI 功能的资质门槛（本项目最大的发布风险）
 
-官方对"包含深度合成或生成式人工智能服务"的应用要求提交：
+**先厘清一个容易搞错的概念：阿里云与本项目是什么关系。**
 
-1. **人工智能生成合成内容标识相关材料**（二选一）：《应用内已添加内容显式标识截图》或《人工智能生成合成内容标识说明函》；
-2. **互联网信息服务算法备案系统首页备案查询结果页面截图** —— 涉及合作方的，需提供**合作方的算法备案（类型为生成合成类）+ 双方合作协议**（协议需含算法名称或备案编号）；
-3. **《安全评估报告》**及其在全国互联网安全服务管理平台的提交结果截图，审核状态须为"通过"。
+本项目的 AI 是 **BYOK（自带 Key）模式**：
+- API Key **由用户在设置页自己填**，掏钱、签约、开账号的是**用户**，不是开发者；
+- 开发者没有自有业务服务器中转，与该服务方不存在代理或转售关系；
+- **但 Base URL 并不是完全自由的**：`AiSettingsPage.validateBaseUrl()` 硬校验 host 必须是
+  `dashscope.aliyuncs.com` 或 `*.maas.aliyuncs.com`，即**阿里云百炼域名**。
+  换句话说，真实识别请求**只可能发给阿里云**，用户能改的只是地域/子域名。
 
-本项目用阿里云百炼 DashScope（`qwen3-vl-plus`）做视觉识别，属于"合作方"情形 ⇒ 需要**阿里云的算法备案编号 + 双方合作协议 + 安全评估报告**。这三样不是开发者自己能补的，得找阿里云拿。
+所以准确的说法是：
+
+| | |
+|---|---|
+| 阿里云是不是"第三方大模型服务方"？ | **是**，而且是唯一的一个（域名白名单锁死） |
+| 开发者是不是阿里云的"合作方"？ | **不是**。没有合同关系，拿不出「双方合作协议」；用户的 Key 与账号是他自己的 |
+| 开发者能不能提供"第三方大模型算法备案截图"？ | **能** —— 阿里云 qwen 系列的备案编号在 [beian.cac.gov.cn](https://beian.cac.gov.cn/#/home) 公开可查，这正是审核要的那份材料 |
+
+官方触发条件（华为与 vivo 口径一致）：
+
+> *"提供 AI 生成合成服务类应用上架时，需同时提交大模型算法备案信息、安全评估报告、安全评估报告提交结果截图、APP 核准等特殊资质要求"*
+> —— vivo《AI 深度合成类应用上架指引》2.1
+>
+> *"若应用使用自身 AI 大模型，则提交对应自身 AI 大模型备案截图；若应用接入第三方 AI 大模型，则提交**合作协议或授权文件或云服务平台采购订单**、第三方大模型算法备案截图"*
+
+关键在于**是否构成「提供 AI 生成合成服务」**。本项目的定性取决于两件事：**提交时怎么申报**，以及**代码里的域名白名单要不要放开**。
+
+| 申报定位 | 开发者需要提交 | 现实可行性 |
+|---|---|---|
+| **工具/客户端**（不提供 AI 服务，AI 服务由用户自己已有的阿里云账号提供） | 阿里云大模型算法备案截图（可查）；**合作协议拿不出**；主张不做安全评估报告 | ⚠️ **备案截图能交，合作协议交不出**——审核若硬性要求合作协议，此路不通 |
+| **提供 AI 服务**（开发者统一采购并转售） | 第三方大模型算法备案截图 + **合作协议/授权文件/云服务采购订单** + 安全评估报告 | ❌ 需自行采购阿里云服务再提供给用户，商务成本与安全评估责任都落到开发者身上 |
+| **发布版不含 AI** | 无 | ✅ 最快 |
+
+**给开发者的两个可选动作**（需要拍板）：
+
+1. **放开 Base URL 域名白名单** —— 允许用户填任意 OpenAI 兼容地址（保留"必须 https"）。
+   好处：App 成为真正的通用客户端而不是"阿里云专属客户端"，按「工具/客户端」申报更有底气，
+   也与隐私政策里"接收方由用户自选"的表述一致；届时「第三方大模型」是用户自选的，开发者更没有代持责任。
+   代价：失去一道防误配的护栏（需在界面上加风险提示）。
+   代码位置：`AiSettingsPage.ets` 的 `validateBaseUrl()`。
+2. **保持白名单不变** —— 那么必须按"接入第三方 AI 大模型"申报，**备案截图可提供**，
+   但「合作协议」需要开发者与阿里云签一份（哪怕是服务采购/授权文件），否则提交时这一栏填不出来。
+
+无论走哪条，下面这些是**无论怎么申报都要做**的，本项目已完成或已补：
+
+1. **显性标识**：AI 生成的内容附近要有含「AI」+「生成/合成」的标识。已把结果卡角标从「AI 估算」改为
+   **「AI 生成估算」**，并新增一行「以上食物名称、热量与宏量均为 AI 生成，仅供参考」。
+2. **隐式标识**：仅当生成内容是**文件**（图片/音频/视频）并带元数据时才需要。本项目 AI 输出是纯文本（JSON），**不需要**。
+3. **隐私政策披露第三方接收方**：应用内政策第五节已写明接收方地址与"开发者与该服务方不存在合作或代理关系"，并留了「法定主体/留存期限/隐私政策链接」的占位待补。
 
 备案查询入口：[https://beian.cac.gov.cn/#/home](https://beian.cac.gov.cn/#/home)
+
+依据：华为开发者联盟《2026 年 HarmonyOS 应用市场上架审核高频问题速通攻略》问题 12；
+vivo 开放平台《AI 深度合成类应用上架指引》2.1 资质要求（各应用商店口径一致）。
 
 #### 其它会被卡住的点（官方 FAQ 原文）
 
@@ -474,27 +555,35 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 - **应用名称唯一**：创建时系统校验，且提交后还会人工审核是否为泛词或存在侵权风险 —— "CalorieFit" 需确认无冲突。
 - **审核中可查进度**：AppGallery Connect 后台实时查看，紧急发布可申请"审核加急"。
 
-### 11.3 AI 功能的两条路（需要发布者拍板）
+### 11.3 AI 功能的三条路（需要发布者拍板）
 
-「单机 APP」判定和 AI 资质门槛是**互相拉扯**的：AI 联网让"完全离线型"这个豁免变得有风险，而保留 AI 就得凑齐阿里的三样资质。
+「单机 APP」判定和 AI 申报口径是**互相拉扯**的。两个关键前提：
 
-| | 方案 A：保留 AI 识别 | 方案 B：发布版不含 AI |
-|---|---|---|
-| 联网行为 | 识别时上传照片到用户自配的 AI 地址 | 完全无网络行为 |
-| 资质 | 阿里云算法备案查询截图 + 双方合作协议 + 安全评估报告（**都拿不到就发不了**） | 无 |
-| 备案 | 保守做法仍建议按"服务器在中国大陆"完成备案，或请审核方确认豁免 | 可勾「单机 APP」，免备案 |
-| 商店隐私政策 | 必须写清第三方接收方（DashScope）的法定主体、留存期限、隐私政策链接 | 无第三方接收方 |
-| 与"一比一还原"的关系 | 原版有 AI 能力，保留更接近 | 与原版有偏差，需在交付说明里显式披露 |
-| 后果 | 慢，但功能完整 | 快，但少一块功能 |
+1. 本项目是 **BYOK 模式**——API Key 由用户自己填，掏钱签约的是用户，**开发者与阿里云没有合作关系，也拿不出「双方合作协议」**；
+2. 但 **Base URL 被 `validateBaseUrl()` 锁在百炼域名**（`dashscope.aliyuncs.com` / `*.maas.aliyuncs.com`），
+   所以真实识别的接收方**只可能是阿里云**——它既是唯一服务方，也是审核要的「第三方大模型」那份备案截图的对象。
 
-**建议**：先按方案 B（发布版不含 AI）把主链路走通上架，把资质材料作为**版本迭代**而不是上架前置；等拿到阿里的三样材料再发带 AI 的版本。
+| | 路径 A：按「工具/客户端」申报 | 路径 B：与阿里云签服务采购/授权文件 | 路径 C：发布版不含 AI |
+|---|---|---|---|
+| 申报口径 | App 不提供 AI 服务，只把用户自己已有账号的 AI 服务接进来 | 开发者与阿里云建立正式关系并转售服务 | 无 AI 功能 |
+| 开发者资质 | 阿里云大模型算法备案截图（公开可查）；**合作协议拿不出**；主张不做安全评估报告 | 第三方大模型算法备案截图 + **合作协议/授权文件/采购订单** + 安全评估报告 | 无 |
+| 现实可行性 | ⚠️ 备案截图能交，合作协议交不出；**是否接受由审核方判定** | 需商务采购，自担安全评估责任与内容合规责任 | ✅ 最快 |
+| 备案 | 保守做法仍建议按「服务器在中国大陆」完成备案，或请审核方确认豁免 | 同左 | 可勾「单机 APP」，免备案 |
+| 商店隐私政策 | 必须写清第三方接收方（阿里云百炼）的法定主体、留存期限、隐私政策链接 | 同左 | 无第三方接收方 |
+| 与「一比一还原」的关系 | 保留 AI 功能 | 保留 | 与原版有偏差，需在交付说明里显式披露 |
+| 必做项 | AGC 填「AI 功能声明」；内容显性标识；隐私政策披露接收方 | 同左 | — |
 
-代码侧已经为这条路径留了口子：AI 入口是可选功能，**演示模式不发送任何网络请求**，且真实识别必须由用户自备 API Key 并逐次确认上传。这意味着即使保留 AI，AppGallery 问到的"谁接收数据"答案是"用户自己选的地址 + 用户自己的 Key"，而不是"开发者的服务器"——这个定位在提交时要写清楚。
+**建议**：走**路径 C 先上架**，同时并行推进路径 A 的材料（备案截图去 beian 查、合作协议问阿里云商务、或评估放开域名白名单）。理由——路径 A 卡在一个**不是开发者单方面能决定**的点上（审核方是否接受"用户自带 Key"这种形态），而路径 C 完全没有这个不确定性；等资质与口径都确认了再发带 AI 的版本，用版本迭代而不是上架前置来承担这个风险。
+
+**另有一个值得评估的动作：放开 Base URL 的域名白名单**（允许任意 OpenAI 兼容地址，保留"必须 https"）。
+放开后 App 就是真正的通用客户端而不是"阿里云专属客户端"，路径 A 的申报理由会强得多，也与隐私政策里"接收方由用户选"的表述一致；代价是失去一道防误配护栏（需补界面风险提示）。代码位置：`AiSettingsPage.ets` 的 `validateBaseUrl()`。这是个产品决策，尚未实施。
+
+代码侧已经为这些路径留了口子：AI 入口是可选功能，**演示模式不发送任何网络请求**，且真实识别必须用户自备 Key 并逐次确认上传。即使保留 AI，审核时"谁接收数据"的答案也是"用户自己已有的阿里云账号 + 用户自己的 Key"，而不是"开发者的服务器"——这个定位要在提交材料里写清楚。
 
 **给发布者的决策清单**：
 1. 是否有华为开发者账号（个人 / 企业）并完成实名认证？
 2. 能否产出 release certificate 与 Profile（否则连包都传不上去）？
-3. AI 功能走方案 A 还是 B？
+3. AI 功能按路径 A、B 还是 C 申报？
 4. 隐私政策静态页放在哪里（必须公开可访问）？
 5. 运营主体法定全称、客服邮箱、未成年人适用范围 —— 补进 `PrivacyPolicyContent.ets` 的占位项。
 - [x] **系统元数据清理**：已将模块/Ability 的默认英文模板描述替换为 CalorieFit 中文说明；最终发布者身份与商店文案仍待确认。
@@ -538,7 +627,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 ### 12.5 真机底栏图标参考与回归脚本防误报（2026-10-19 12:03）
 
 - 唤醒真机后再次确认 Xiaomi 13 上 NutriScan `MainActivity` 为前台。只把屏幕底部导航区域裁成 `1080×135`；Progress 上方会随账户变化的百分比已遮蔽。保留图 `work/nutriscan-ui-fidelity-20261019/evidence/reference-nutriscan-bottom-nav-20261019-icons-labels-redacted.png`，未落盘全屏帧或其他页面数据。
-- `_tools/verify_all.py` 现在读取 `hdc list targets -v` 并排除 `TCP Offline` / `Disconnected`；运行前输出 HAP 大小、修改时间和 SHA-256，安装或启动未成功时中止，避免对旧安装版本报出通过。
+- `tools/verify_all.py` 现在读取 `hdc list targets -v` 并排除 `TCP Offline` / `Disconnected`；运行前输出 HAP 大小、修改时间和 SHA-256，安装或启动未成功时中止，避免对旧安装版本报出通过。
 - 当前 HDC 输出为 `127.0.0.1:5555 TCP Offline`；脚本拒绝开始回归并在安装阶段前退出。Python/Pillow 依赖可用，离线保护检查返回 `connected: False`。本次没有安装 HAP、没有执行 8 项 UI 回归，也没有验证数据删除流程。
 - 待测构建仍是 11:50:09 生成的 `entry-default-unsigned.hap`，2,690,437 字节，SHA-256：`8881B19A9E87152B1679BDB222F2552B71EB1B85D37E7E3A709DDC008EB2669C`。脚本保护与设备状态记录见 `work/nutriscan-ui-fidelity-20261019/evidence/verification-20261019-regression-guard.txt`。
 
@@ -571,13 +660,13 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 - 首页及运动页的步数卡当时标注为"手动模拟"，对应数据源为 `MANUAL_SIMULATED`。**该状态已于 2026-10-20 10:23 之后改变**：步数改为计步传感器自动采集，来源角标按实际来源显示「传感器自动」/「手动校正」/「未采集」，详见 §13。
 - 热量环新增 NutriScan 实测薄荷色 `#41D9B3`；脂肪条改为参考截图中的蓝色。提示文案删去未经证实的营养/补水效果承诺，改为描述当前已实现功能。
 - 按参考图的环宽与卡片高度修正综合页半环：直径由 208vp 降为 128vp，描边由 12vp 调为 8vp，容器高度同步设为 128vp；三项热量数字位于同一底部遮罩层内，避免环与数值错位或裁切。
-- `_tools/verify_all.py` 的主卡判据同步为三项热量与三项宏量标签，轮播像素差分仍定位首条提示并检查主卡锚点。
+- `tools/verify_all.py` 的主卡判据同步为三项热量与三项宏量标签，轮播像素差分仍定位首条提示并检查主卡锚点。
 - 静态检查通过：回归脚本 Python 语法、base/dark 色值 JSON、36 个 DesignTokens 颜色资源的双主题键匹配、`git diff --check`（仅 LF/CRLF 提示），AppGallery 图标为 1024×1024 PNG。22:38 Hvigor debug `assembleHap` 成功，33 个任务完成（17 执行、16 up-to-date），`CompileResource`、`CompileArkTS` 与 `PackageHap` 均成功。最新未签名 HAP 为 2,830,962 字节，SHA-256 `3F5C4A461FB7BF474F890F0CED65B04C641D3231A2F38EA62B4F375D076336FA`；构建仍有 ArkTS 警告，项目未配置发布签名。
 - 后续重试观察到 DevEco 创建的模拟器 PID `584020` 仅运行数秒便退出；退出前 HDC 仍为 `127.0.0.1:5555 TCP Offline`。随后复查可用内存约 149 MB，HDC 仍 Offline，工作区 Android Platform Tools 的 `adb devices -l` 也未列出真机。该状态不足以判断 App 是否崩溃；设备连接恢复后仍需构建安装并重跑完整 UI 与持久化验证。
 - 本次继续重试时新 PID `608416` 也在轮询前退出；启动时可用内存约 70 MB、HDC Offline，退出后约 103 MB。当前仍未观察到模拟器 HDC Online 或 ADB 真机设备。
 - 22:32 用户告知真机与模拟器已接入后，本机重启 HDC、ADB 服务重新枚举：HDC 为 `[Empty]`，`adb devices -l` 无设备，`adb mdns services` 无无线调试目标；Windows 当前 PnP 设备列表没有 Huawei、Xiaomi 或 Android 手机标识。模拟器 `-list -details` 显示 Mate 90 Pro `isRunning=false`，CLI 冷启动返回 `Unable to start the emulator`。这些是当前 Codex 工作站工具可见状态，与用户所见状态不一致，尚不能据此判断设备本身是否已连接到其他会话/网络。
-- 当前运行 `_tools/verify_all.py` 在 `connected()` 预检处退出，退出码 2、结果 0/8；它在预检失败后没有安装 HAP、启动 App 或改动设备。最新 HAP 的 UI、视觉与 V4 持久化均仍待本机设备桥接恢复后验证。
-- 22:38 构建后再次针对当前 HAP 运行 `_tools/verify_all.py`，同样在设备预检退出，结果 0/8、未安装或启动应用；HDC 仍 `[Empty]`，ADB 仍无目标。
+- 当前运行 `tools/verify_all.py` 在 `connected()` 预检处退出，退出码 2、结果 0/8；它在预检失败后没有安装 HAP、启动 App 或改动设备。最新 HAP 的 UI、视觉与 V4 持久化均仍待本机设备桥接恢复后验证。
+- 22:38 构建后再次针对当前 HAP 运行 `tools/verify_all.py`，同样在设备预检退出，结果 0/8、未安装或启动应用；HDC 仍 `[Empty]`，ADB 仍无目标。
 - 为降低前次启动时记录到的宿主内存压力，Mate 90 Pro 实例 `hw.ramSize` 暂设为 2048 MiB；修改前配置备份在 `work/nutriscan-ui-fidelity-20261019/evidence/Mate-90-Pro-config-before-ram-adjustment.ini`。此次启动仍未成功，因此该内存调整尚未证明有效。
 
 ### 12.10 单用户范围调整与模拟器确认（2026-10-19）
@@ -585,21 +674,21 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 - 按产品范围调整移除今日页社群子页、个人公开开关和示例帖子数据；今日子导航现在为「综合 / 饮水 / 断食」。进度页报告占位改为个人报告本地导出方向，不再描述系统分享。
 - Hvigor debug `assembleHap` 成功，33 个任务（22 个执行、11 个复用）。HAP 为 2,802,974 字节，SHA-256 `d9c35aea019570059666be2e112f50280509503e9b2a335464de7965d1a22e99`；无签名配置，仍为未签名调试包。
 - HAP 已安装并启动在 Mate 90 Pro 模拟器。首页截图确认只显示三个子页且不含社群入口；逐一点击「饮水」「断食」均打开对应页面。截图：`work/nutriscan-ui-fidelity-20261019/evidence/single-user-scope/home.jpeg`。
-- `_tools/verify_all.py` 在五步引导阶段停止：当前模拟器已有本版本隐私同意和引导完成状态，脚本将首步引导作为硬性前置，因此尚未进入后续 8 项回归。没有清除模拟器应用数据。模拟器当前存在饮水记录，空数据持久化脚本不适合直接执行；本轮仅做无数据变更的导航检查。
+- `tools/verify_all.py` 在五步引导阶段停止：当前模拟器已有本版本隐私同意和引导完成状态，脚本将首步引导作为硬性前置，因此尚未进入后续 8 项回归。没有清除模拟器应用数据。模拟器当前存在饮水记录，空数据持久化脚本不适合直接执行；本轮仅做无数据变更的导航检查。
 - 本轮未取得真机页面截图；完整 UI 回归、真机逐屏对照与后续数据持久化验证仍未完成。
 
 ### 12.11 单用户范围下的首页校准与当前 HAP 回归（2026-10-19）
 
 - 修正首页热量半环的遮罩与内容定位，使弧线位于三项热量数据上方；提示区改为单卡横向 `Swiper` 并显示页点；空餐食卡调整为方形横向卡片。当前首页截图：`work/nutriscan-ui-fidelity-20261019/evidence/single-user-scope/home-layout-final.jpeg`。此前短暂用于检查遮罩位置的红色诊断背景已移除，最终构建与截图均使用正常深色 token。
 - 最新 Hvigor debug `assembleHap` 构建成功，33 个任务（17 执行、16 up-to-date）。HAP 为 2,813,209 字节，SHA-256：`A129357CA4356D748E2D3FF1194B3219580B6990217108602C8A7026A83511F9`；项目未配置发布签名，仍为未签名调试包。
-- 最新 HAP 的 `_tools/verify_all.py` 回归结果：**10 passed、1 skipped、0 failed（11 项）**。通过项包括首页主视觉、AI 识别入口、轮播横滑、餐食卡片与详情、示例图入口、本地 AI 演示识别链路、全部餐食页、断食首屏和断食 V4 强停重启持久化。饮水 V4 持久化因模拟器已有饮水记录而跳过；测试没有清除或修改已有记录。截图保存在 `_tools/shots/`。
+- 最新 HAP 的 `tools/verify_all.py` 回归结果：**10 passed、1 skipped、0 failed（11 项）**。通过项包括首页主视觉、AI 识别入口、轮播横滑、餐食卡片与详情、示例图入口、本地 AI 演示识别链路、全部餐食页、断食首屏和断食 V4 强停重启持久化。饮水 V4 持久化因模拟器已有饮水记录而跳过；测试没有清除或修改已有记录。截图保存在 `tools/shots/`。
 - 轮播像素差分检查观察到提示横带变化 **16.6%**，首页主卡锚点变化 **0.00%**。像素变化用于确认内容已横向移动；旧版空断言和“UI 树节点消失”均不再作为轮播通过依据。
 - Impeccable layout detector 对 `HomePage.ets` 与 `HomeTabs.ets` 返回空问题列表；`git diff --check` 通过，输出只有 Windows 工作区 LF/CRLF 提示。
 - 最新工具复查时 `adb devices -l` 未列出真机设备；本节的视觉和回归结果仅代表 Mate 90 Pro 模拟器。Xiaomi 13 真机逐页对照仍需在 ADB 重新识别并且 NutriScan 页面可见后完成。发布签名、政策草案中的主体与接收方信息、商店截图和最终设备验收仍待关闭，见 §11。
 
 ### 12.12 当前 debug 精确产物复测与 release 构建检查（2026-10-19）
 
-- 当前源码重新构建 debug `assembleHap` 成功，33 项任务（22 执行、11 up-to-date），HAP 2,813,209 字节，SHA-256 `7D3CFC2BF9D7661DC60988142E735659A4B915276E4D81D9C788308F78BEA429`。该精确产物已安装到 Mate 90 Pro 模拟器并完成 `_tools/verify_all.py`：**10 passed、1 skipped、0 failed**。饮水 V4 因现有记录跳过；断食测试写入自己的计划、强停重启读回并结束了测试计划，没有清空已有数据。完整逐项日志见 `work/nutriscan-ui-fidelity-20261019/evidence/verification-20261019-current-debug-hap-final.txt`；截图已更新到 `_tools/shots/`；脚本结束后已将模拟器恢复到“今日热量”首页。
+- 当前源码重新构建 debug `assembleHap` 成功，33 项任务（22 执行、11 up-to-date），HAP 2,813,209 字节，SHA-256 `7D3CFC2BF9D7661DC60988142E735659A4B915276E4D81D9C788308F78BEA429`。该精确产物已安装到 Mate 90 Pro 模拟器并完成 `tools/verify_all.py`：**10 passed、1 skipped、0 failed**。饮水 V4 因现有记录跳过；断食测试写入自己的计划、强停重启读回并结束了测试计划，没有清空已有数据。完整逐项日志见 `work/nutriscan-ui-fidelity-20261019/evidence/verification-20261019-current-debug-hap-final.txt`；截图已更新到 `tools/shots/`；脚本结束后已将模拟器恢复到“今日热量”首页。
 - Hvigor release `assembleHap` 编译成功；未签名 release HAP 已安装到模拟器并启动到首页（单页冒烟），但输出明确为 `Will skip sign 'hos_hap'. No signingConfigs profile is configured`。产物单独保存为 `work/nutriscan-ui-fidelity-20261019/artifacts/entry-default-release-unsigned.hap`，1,273,773 字节，SHA-256 `B9D686CE9672923B90D70EA9BC8FF87B006E613DEB47ECF37C42A0A20C4E72AB`。这证明 release 编译和本地模拟器启动可运行，不证明可分发；发布签名、Profile 和当前关闭的混淆策略仍需处理。
 - 官方 Hvigor 命令 `assembleApp` 亦成功产出 release App Pack：`work/nutriscan-ui-fidelity-20261019/artifacts/calories-default-release-unsigned.app`，618,088 字节，SHA-256 `B39FA1511D66395334D690279CFD9A8EB2830129DB6D96441EFBA94A5D782BA4`。App Pack 签名也被跳过，因此仍不可上传。Hvigor 官方命令说明见[Using hvigorw](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide-hvigor-commandline)；华为说明上架需 release certificate/profile，见[证书说明](https://developer.huawei.com/consumer/en/doc/app/agc-help-add-debugcert-0000001914263178)。
 - AppGallery Connect 官方规格已复核（2026-01-20 更新）：HarmonyOS 手机/平板支持 3–5 张竖屏截图，9:16、1080×1920，PNG/JPG/JPEG 单张不超过 5 MB。当前还没有从最终真机验收版本制作商店截图；规格见[华为 AppGallery 素材要求](https://developer.huawei.com/consumer/en/doc/agc-help-app-visual-asset-spec-0000002277607976)。
@@ -609,26 +698,62 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 
 - 产品按单用户个人记录交付：删除社群页面和导航入口，不提供好友关系、动态、点赞评论或公开个人资料。五个底部主 Tab 保留今日、膳食、进度、营养师和我的；今日只含综合、饮水、断食三个个人记录子页。源码扫描没有发现社群入口或页面路由。
 - 当前调试 HAP 已安装并运行于 Mate 90 Pro 模拟器：`entry/build/default/outputs/default/entry-default-unsigned.hap`，2,812,758 字节，SHA-256 `70636AD95DFDF149DB5C7C1B615E735931B5A9A4C5EB9B1C20520CF8030933DD`。HAP 未签名，不能作为商店分发包。
-- 当前 HAP 的 `_tools/verify_all.py` 回归为 **11 passed、0 skipped、0 failed**。通过项覆盖综合页、AI 入口、本地演示识别、轮播像素差分、餐食卡片和详情、全部餐食列表、饮水 V4 持久化与断食 V4 持久化。水记录重启读回 250 ml 后通过应用内“撤销”清理本次测试记录；断食测试恢复进行中的测试方案后结束该方案。
-- 本轮把今日“综合”图标换为本地单色食物碗 SVG，并把饮水“撤销”入口移到快捷记录区。轮播横带像素变化为 **16.6%**，主卡锚点变化为 **0.00%**。当前截图与日志：`_tools/shots/v_01_home.jpeg`、`_tools/shots/v_03_carousel.jpeg`、`work/nutriscan-ui-fidelity-20261019/evidence/verification-20261020-single-user-final.txt`。回归后模拟器恢复到今日首页。
+- 当前 HAP 的 `tools/verify_all.py` 回归为 **11 passed、0 skipped、0 failed**。通过项覆盖综合页、AI 入口、本地演示识别、轮播像素差分、餐食卡片和详情、全部餐食列表、饮水 V4 持久化与断食 V4 持久化。水记录重启读回 250 ml 后通过应用内“撤销”清理本次测试记录；断食测试恢复进行中的测试方案后结束该方案。
+- 本轮把今日“综合”图标换为本地单色食物碗 SVG，并把饮水“撤销”入口移到快捷记录区。轮播横带像素变化为 **16.6%**，主卡锚点变化为 **0.00%**。当前截图与日志：`tools/shots/v_01_home.jpeg`、`tools/shots/v_03_carousel.jpeg`、`work/nutriscan-ui-fidelity-20261019/evidence/verification-20261020-single-user-final.txt`。回归后模拟器恢复到今日首页。
 - 本机仍只枚举到 Mate 90 Pro 模拟器；ADB 和 Windows PnP 未发现 Xiaomi 13 真机，因此尚未完成真机逐页视觉对照。10 月 19 日留档的 release HAP/App Pack 未签名，且早于本轮 UI 修改；当前源码尚未重新生成正式 release 包。证书、Profile 和 AppGallery 上架资料仍需完成。
 
 ### 12.14 定位「完全免费」后的构建与全量回归（2026-10-20 09:29–09:50）
 
 - 本轮按产品决策把项目定为**完全免费**：删除今日页页头的「免费试用 1 周」与粉橙渐变「升级」两个按钮及其占位入口；删除 `premium_pink` / `premium_orange` 两枚色标（base 与 dark 双份），饮水页火焰图标改用独立的 `streak_orange`；「我的」新增「版本与授权」卡。详见 §0.6。
 - 当前调试 HAP：`entry/build/default/outputs/default/entry-default-unsigned.hap`，2,824,437 字节，SHA-256 `eb04da31e0a5ba40b98807398c328fe6c95cd786bf1109932ec6b25a0f89d56c`。`assembleHap` BUILD SUCCESSFUL。
-- `_tools/verify_all.py` 全量回归：**10 passed、1 skipped、0 failed（11 项）**。唯一 SKIP 是饮水 V4 持久化 —— 模拟器已有饮水记录，脚本为避免覆盖或撤销现有记录主动跳过，与本次改动无关。轮播横带像素变化 16.6%，主卡锚点变化 0.00%。
+- `tools/verify_all.py` 全量回归：**10 passed、1 skipped、0 failed（11 项）**。唯一 SKIP 是饮水 V4 持久化 —— 模拟器已有饮水记录，脚本为避免覆盖或撤销现有记录主动跳过，与本次改动无关。轮播横带像素变化 16.6%，主卡锚点变化 0.00%。
 - 「完全免费」专项实机确认（同一 HAP）：
   1. 今日页页头 UI 树含「全部功能免费」（bounds `[881,171][1224,283]`），整棵树**已无**「免费试用 1 周」「升级」文本；
   2. 「我的 → 版本与授权」卡实机渲染，两行文案均出现；
   3. 饮水页「连续达标」火焰图标仍为橙色 —— `streak_orange` 替换 `premium_orange` 后未变灰。
-- 截图：`_tools/shots/free_header.jpeg`、`free_profile.jpeg`、`free_license.jpeg`、`free_water.jpeg`；日志：`work/nutriscan-ui-fidelity-20261019/evidence/verification-20261020-free-version.txt`。
+- 截图：`tools/shots/free_header.jpeg`、`free_profile.jpeg`、`free_license.jpeg`、`free_water.jpeg`；日志：`work/nutriscan-ui-fidelity-20261019/evidence/verification-20261020-free-version.txt`。
+
+### 12.16 「完全免费」合规修正 + 跨平台化的验证（2026-10-20 13:00–13:20）
+
+本轮做了三件事：纠正阿里云定性、补 AI 生成内容显性标识、把验证脚本跨平台化。
+
+**定向验证 16/16 全部通过**（`tools/verify_free_markers.py`，本轮新写的定向脚本）：
+
+| # | 检查项 | 结果 |
+|---|---|---|
+| 1 | 首启同意页出现 | PASS |
+| 2 | **政策入口在首屏可见** | PASS（上一轮加计步说明后被挤到折叠线以下，已上移） |
+| 3 | 计步传感器已如实披露 | PASS |
+| 4 | 隐私政策全文可打开 | PASS |
+| 5 | 政策写明计步传感器来源 | PASS |
+| 6 | **政策写明百炼域名限定** | PASS |
+| 7 | **政策写明开发者与接收方无合作关系** | PASS |
+| 8 | **从政策页返回后回到同意页**（不退出应用） | PASS（`onBackPress` 修复） |
+| 9 | 进入引导首屏 | PASS |
+| 10 | 新用户体重/身高未被预填 | PASS |
+| 11 | 引导完成并进入今日页 | PASS |
+| 12 | 进入 AI 设置页 | PASS |
+| 13 | 找到演示模式开关 | PASS |
+| 14 | **出现「AI 生成估算」显性标识** | PASS（截图可见，位于识别结果卡右上角） |
+| 15 | **出现 AI 生成声明行** | PASS（已挪到食物名正下方，不再被折叠线挡住） |
+| 16 | 演示模式标注仍在 | PASS |
+
+- 截图：`tools/shots/v_free_consent.jpeg`、`v_free_policy.jpeg`、`v_free_ai_marker.jpeg`。
+- 主包 `assembleHap` BUILD SUCCESSFUL；单元测试 22/22 仍通过（基线算法与仓储优先级未受本轮影响）。
+- **本轮全量 UI 回归（11 项）未能在当前 HAP 上跑完**：本机模拟器桥接在验证期间反复自退
+  （`hdc list targets` 变 `[Empty]`、`Emulator.exe` 进程还在但 5555 端口不监听），
+  今日累计自退 5 次，每次重启后可稳定跑 3–5 分钟。全量回归最近一次完整结果仍是
+  10 passed / 1 skipped / 0 failed（§12.15 的 10:54 构建）。本轮改动的三处界面
+  已用上述定向脚本逐项验证通过。
+- 另修掉一个**真 bug**：首启同意页的「隐私政策」是页内浮层，不接管返回键时按系统返回会
+  **直接退出整个应用**；已加 `onBackPress`（见 §5.8）。
+
 
 ### 12.15 步数自动采集的构建与验证（2026-10-20 10:23–11:00）
 
 - 新增**计步传感器自动采集**（`SensorId.PEDOMETER`），替换原先的「本地模拟步数」。设计见 §13。
 - 主包构建：`assembleHap` BUILD SUCCESSFUL；HAP `entry/build/default/outputs/default/entry-default-unsigned.hap`，2,894,189 字节，SHA-256 `ccc076dd9ff2261bf089bb9f291bbf7e544ff55e22154135e847ce76fad342d5`。
-- **既有 UI 回归未受影响**：`_tools/verify_all.py` **10 passed、1 skipped、0 failed（11 项）**，轮播横带像素变化 16.6%、主卡锚点变化 0.00%。
+- **既有 UI 回归未受影响**：`tools/verify_all.py` **10 passed、1 skipped、0 failed（11 项）**，轮播横带像素变化 16.6%、主卡锚点变化 0.00%。
 - **模拟器实机确认**（Mate 90 Pro）：
   1. 冷启动时 `hilog` 出现 `status=need_permission detail=需要动作权限` —— 传感器存在，但**没有弹权限框**（静默启动策略生效）；
   2. 运动页点「开启自动采集」→ 弹出系统权限框，文案为「用于读取计步传感器，自动统计你当日走的步数，让步数目标进度真实可信」；
@@ -645,7 +770,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
   - 结果：**Tests run: 22, Failure: 0, Error: 0, Pass: 22**。
   - 依赖：新增 `@ohos/hypium`（devDependencies），来自 `https://repo.harmonyos.com/ohpm/`。
 - 跑法见 README「单元测试（ohosTest）」一节。测试包同样未签名，只能装在模拟器/调试设备上。
-- 截图：`_tools/shots/step_page.jpeg`、`step_perm.jpeg`、`step_final.jpeg`。
+- 截图：`tools/shots/step_page.jpeg`、`step_perm.jpeg`、`step_final.jpeg`。
 - **未完成的**：`运动记录`（类型/时长/热量）仍是手动填写，未接 `SensorId` 的加速度计/陀螺仪；模拟器上计步器不产生真实步数，因此「真实步数累加」这一段只有单测覆盖，没有真机走路的端到端证据。
 
 ---

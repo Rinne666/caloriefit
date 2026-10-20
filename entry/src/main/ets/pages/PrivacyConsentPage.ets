@@ -13,6 +13,21 @@ export struct PrivacyConsentPage {
   @State private saving: boolean = false;
   @State private showPolicy: boolean = false;
 
+  /**
+   * 政策是**页内浮层**（showPolicy），不是 NavDestination。
+   * 不接管返回键的话，用户在政策页按返回会直接**退出整个应用**，
+   * 而不是回到同意页 —— 同意流程被打断，用户得重新冷启动。
+   *
+   * 返回 true 表示"已处理"，系统不再往下传。
+   */
+  onBackPress(): boolean {
+    if (this.showPolicy) {
+      this.showPolicy = false;
+      return true;
+    }
+    return false;
+  }
+
   private async acceptAndContinue(): Promise<void> {
     if (this.saving || !this.generalAccepted || !this.healthAccepted) {
       return;
@@ -114,6 +129,17 @@ export struct PrivacyConsentPage {
               .lineHeight(25)
               .width('100%')
 
+            // 政策入口放在首屏固定位置：说明文字一旦变长，它就会被挤出折叠线以下，
+            // 用户看不到政策全文，审核时也判为"政策不可达"。
+            Button('阅读完整隐私政策')
+              .width('100%')
+              .height(42)
+              .fontSize(fontSize.secondary)
+              .fontColor(color.primary)
+              .backgroundColor(color.primaryLight)
+              .borderRadius(radius.medium)
+              .onClick(() => this.showPolicy = true)
+
             Column({ space: space.md }) {
               Text('会在本机处理')
                 .fontSize(fontSize.sectionTitle)
@@ -134,15 +160,6 @@ export struct PrivacyConsentPage {
             .backgroundColor(color.surface)
             .border({ width: layout.borderWidth, color: color.border })
             .borderRadius(radius.card)
-
-            Button('阅读完整隐私政策')
-              .width('100%')
-              .height(42)
-              .fontSize(fontSize.secondary)
-              .fontColor(color.primary)
-              .backgroundColor(color.primaryLight)
-              .borderRadius(radius.medium)
-              .onClick(() => this.showPolicy = true)
 
             Text('开发预览提示：运营主体、联系方式、AI 服务方完整信息和未成年人规则仍需发布者补齐；此版本不能直接作为正式上架政策。')
               .fontSize(fontSize.caption)

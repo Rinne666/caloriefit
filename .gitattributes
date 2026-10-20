@@ -1,0 +1,23 @@
+# 统一行尾，避免跨平台反复出现"改了整份文件"的假 diff
+#
+# Windows 的 git 默认 core.autocrlf=true，工作区被转成 CRLF；
+# macOS/Linux 默认 false，工作区是 LF。同一份代码在两个平台来回切，
+# 每个文件都会冒出"整行都变了"的假 diff。
+#
+# 这里统一约定：仓库内存 LF，工作区也用 LF（Windows 也不例外）。
+# ArkTS 编译器、hvigor、ohpm 对 LF 都没有兼容性问题。
+#
+# 要改某个文件的行尾，不要手工转，用：
+#   git add --renormalize <路径>
+
+* text=auto eol=lf
+
+# 二进制资源不做行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.hap binary
+*.har binary
+*.zip binary
