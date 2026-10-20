@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "CalorieFit"
+    },
+    {
+      "name": "permission_activity_motion_reason",
+      "value": "用于读取计步传感器，自动统计你当日走的步数，让步数目标进度真实可信"
     }
   ]
 }

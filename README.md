@@ -10,6 +10,7 @@
 - 食物与运动记录、餐食详情、宏量营养素目标、体征档案、主题偏好。
 - “我的”页可清除本地健康档案、目标、记录和 AI 凭证；删除后不再用虚构体征值填充档案，饮水目标显示为未设置。
 - 饮水和断食记录保存在本地 RDB；示例和推断内容有来源标识，尚未实现的入口进入说明页。
+- **步数自动采集**：运动页可开启计步传感器自动统计当日步数（`SensorId.PEDOMETER`）。传感器给的是开机以来的累计值，本地做基线差值换算成当日步数，跨零点按时间比例重新拆分基线。手动填写的值优先于传感器，点「恢复自动采集」后交回传感器。
 - AI 食物识别支持内置演示数据和用户配置的兼容服务。演示模式不发送网络请求；真实识别会将选中的照片发送到配置的 AI 服务进行分析。照片分析结果仅供参考。
 
 ## 定价与收费
@@ -26,8 +27,26 @@
 - **SDK**：HarmonyOS 26.0.0，`compatibleSdkVersion` / `targetSdkVersion` 为 `26.0.0`。
 - **持久化**：ArkData RDB（`caloriefit.db`），当前 7 张业务表：`app_settings`、`food_log`、`exercise_log`、`daily_activity`、`body_profile`、`water_log`、`fasting_log`。`food_log_v2` 是迁移过程使用的临时表。
 - **依赖**：`@pura/harmony-dialog`（`^1.1.8`）。
-- **运动数据**：当前步数为本地模拟数据；运动记录由用户手动填写。
+- **运动数据**：运动记录（类型/时长/热量）由用户手动填写；**步数可由计步传感器自动采集**，需在运动页主动开启并授予 `ohos.permission.ACTIVITY_MOTION`。设备没有计步传感器时自动采集不可用，手动填写仍然可用。
 - **主题**：新安装默认深色以还原 NutriScan 实测视觉；用户可改为跟随系统或浅色。
+
+## 单元测试（ohosTest）
+
+步数基线算法和步数写入优先级这类**边界逻辑**跑在设备上的真实代码里，不是等价实现复写：
+
+```powershell
+$env:DEVECO_SDK_HOME="C:/Program Files/Huawei/DevEco Studio/sdk"
+& "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat" `
+  --mode module -p product=default -p module=entry@ohosTest -p buildMode=debug assembleHap --no-daemon
+
+$hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe"
+& $hdc install -r entry\build\default\outputs\ohosTest\entry-ohosTest-unsigned.hap
+& $hdc shell aa test -b com.rinne.caloriefit -m entry_test -s unittest OpenHarmonyTestRunner -s timeout 60000
+```
+
+当前 **22 项全通过**：18 项覆盖基线算法（首日/跨天拆分/重启复位/负值钳制/时间戳单位自标定），4 项覆盖步数写入优先级（手动值不被传感器覆盖、恢复自动采集后重新接管、来源角标文案）。
+
+测试包与主包同样是未签名包，只能装在模拟器/调试设备上。
 
 ## 构建与安装（调试版）
 

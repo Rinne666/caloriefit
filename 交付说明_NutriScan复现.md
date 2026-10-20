@@ -14,6 +14,8 @@
 
 **产品定价已定为完全免费**：不设试用、不设升级入口、无应用内购买、无订阅校验、无权益墙。所有已实现功能默认全部开放。详见 §0.6。
 
+**步数已接入真实计步传感器自动采集**（`SensorId.PEDOMETER`），原先的"本地模拟步数"已替换；手动填写降为校正手段。算法、权限与已知局限详见 §13。
+
 ---
 
 ## 0.5 ✅ 曾存在的最大偏差：视觉语言已恢复
@@ -227,6 +229,24 @@ API 23 起报 `The V1 decorator '@Prop' cannot be applied to a Function-type var
 ### 5.6 `private get` 在 `@Component` 中求值不可靠
 返回 NaN 会让 `.width("NaN%")` 静默失效。已全项目清零，改用普通方法。
 
+### 5.7 传感器与权限 API 的几个类型坑（接步数功能时踩的）
+
+1. **`Permissions` 是字符串字面量联合类型，不是 `string`。**
+   `const P: Permissions = 'ohos.permission.ACTIVITY_MOTION'` 才行；
+   写成 `const P: string = '...'` 会报 `Type 'string' is not assignable to type 'Permissions'`。
+2. **kit 名字是 `@kit.SensorServiceKit`，不是 `@kit.SensorService`。**
+   写错会在编译期报 `Kit '@kit.SensorService' has no corresponding config file in ArkTS SDK`。
+3. **回调里的 `err` 成功时是 `null`，不是空对象。**
+   `abilityDelegator.startAbility(want, (err) => { hilog.info(..., err.message) })` 会抛
+   `TypeError: Cannot read property message of null` 把整个进程带走。
+   本项目的 ohosTest runner 第一版就死在这，测试进程直接 `App died`。
+4. **`catch (e)` 里的 `e` 在 ArkTS 里是隐式 any/unknown**，直接 `JSON.stringify(e)` 编译不过。
+   要 `const err = e as BusinessError;` 之后再用。
+5. **`ohos.permission.ACTIVITY_MOTION` 是 user_grant，不是 system_grant。**
+   查 `ohos/toolchains/lib/PermissionDefinitions.json` 的 `grantMode` 字段确认。
+   声明在 module.json5 之外，还必须运行时 `requestPermissionsFromUser` 申请，
+   否则 `sensor.on` 直接抛 201。
+
 ---
 
 ## 6. 验证方式
@@ -237,6 +257,7 @@ API 23 起报 `The V1 decorator '@Prop' cannot be applied to a Function-type var
 - **逐屏**：模拟器遍历 5 个底 Tab + 4 个子页 + 占位层，截图核对
 - **数据**：饮水目标由体重推导（65kg × 35 = 2275 → 取整到 2300），断食方案名逐条对应 strings
 - **无 JSError**：hilog 无 jscrash / FATAL / TypeError
+- **单元测试**：ohosTest 模块跑在设备上的**真实生产代码**，22/22 通过（见 §12.15 与 README）
 
 ---
 
@@ -338,6 +359,15 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 - `verify_sweep.py` —— 仪器化验证环形扫描动画确实在扫而非跳终值
 - `shrink_sample.py` —— 压缩内置示例图
 
+跑单元测试（真实生产代码，22/22）：
+
+```powershell
+& "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat" `
+  --mode module -p product=default -p module=entry@ohosTest -p buildMode=debug assembleHap --no-daemon
+& $hdc install -r entry\build\default\outputs\ohosTest\entry-ohosTest-unsigned.hap
+& $hdc shell aa test -b com.rinne.caloriefit -m entry_test -s unittest OpenHarmonyTestRunner -s timeout 60000
+```
+
 ---
 
 ## 10. 完整路由表
@@ -376,7 +406,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 
 - [ ] **签名与发布身份**：由发布者提供华为开发者账号、release certificate、Profile 与签名配置；确认最终 bundle、应用名、开发者/厂商身份和联系信息。官方发布证书说明见[华为开发者文档](https://developer.huawei.com/consumer/en/doc/app/agc-help-add-debugcert-0000001914263178)。
 - [ ] **隐私告知与同意**：已实现版本化首启告知、通用规则与健康信息分项同意、应用内政策页，以及真实 AI 识别逐次上传确认；首启政策、同意、上传说明和取消流程已在 Mate 90 Pro 模拟器通过。“删除数据并撤回同意”运行后返回未同意的首启页。HDC 禁止直接列出应用沙箱，未做删除后数据库/Asset 的独立低层读取。当前政策明确标为开发预览草案，发布者法定主体/联系渠道、AI 接收方具体主体/留存规则、未成年人适用范围仍是占位信息，补齐并经运营主体审核后方能上架。PIPL 将医疗健康列为敏感个人信息并要求单独同意；应用程序不得强制同意非必要信息或因此拒绝基本功能，正式产品须确认健康数据处理确为核心功能必要。参考[《个人信息保护法》第28–30条](https://www.miit.gov.cn/jgsj/zfs/fl/art/2022/art_515a4b20c12f430eab54bb4f56d89f56.html)、[《移动互联网应用程序信息服务管理规定》第12条](https://www.cac.gov.cn/2022-06/14/c_1656821626455324.htm)和[华为 HarmonyOS 合规指南](https://developer.huawei.com/consumer/cn/doc/appgallery-connect-Guides/agc-auth-harmonyos-arkts-personal-data-0000001631566342)。
-- [ ] **产品完成度**：`MockActivityDataSource` 仍提供模拟步数；若目标是正式健康记录产品，需接入真实来源或在发布版本移除/清楚禁用该功能。`ComingSoon` 占位入口仍存在；逐项决定补齐、移除或延后发布。
+- [ ] **产品完成度**：步数已接入真实计步传感器自动采集（见 §13），手动填写作为设备不支持/用户校正时的兜底；来源角标会区分「传感器自动」与「手动校正」。但 `运动记录`（类型/时长/热量）仍需手动填写，且「从运动健康导入」受 Health Service Kit 资质审核阻塞（约 15 个工作日）。`ComingSoon` 占位入口仍存在；逐项决定补齐、移除或延后发布。
 - [ ] **发布构建与设备验收**：确认 release 混淆策略、修复/接受构建警告，使用正式签名重新构建；在实际支持的 HarmonyOS 设备上跑完整路由、数据持久化、权限/相机、网络错误与升级迁移回归。
 - [ ] **商店物料**：补齐最终应用描述、图标/截图、分类、年龄分级和发布者支持联系方式。
 - [x] **系统元数据清理**：已将模块/Ability 的默认英文模板描述替换为 CalorieFit 中文说明；最终发布者身份与商店文案仍待确认。
@@ -450,7 +480,7 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 ### 12.9 首页参考图结构修订与当前源码构建（2026-10-19）
 
 - 按真机参考图 `main_nav_01_Open_water_tracker.png` 调整首页首屏：日期压成单行；热量主卡改为半环、剩余/已摄入/目标三项数据和同卡宏量条；餐食卡改为横向浏览，并把拍照识别入口收至餐食标题行。没有生成或填入虚构的餐食照片及身体数据。
-- 首页及运动页的步数卡现在明确标注“手动模拟”；对应数据源为 `MANUAL_SIMULATED`，不应误认为来自设备传感器。
+- 首页及运动页的步数卡当时标注为"手动模拟"，对应数据源为 `MANUAL_SIMULATED`。**该状态已于 2026-10-20 10:23 之后改变**：步数改为计步传感器自动采集，来源角标按实际来源显示「传感器自动」/「手动校正」/「未采集」，详见 §13。
 - 热量环新增 NutriScan 实测薄荷色 `#41D9B3`；脂肪条改为参考截图中的蓝色。提示文案删去未经证实的营养/补水效果承诺，改为描述当前已实现功能。
 - 按参考图的环宽与卡片高度修正综合页半环：直径由 208vp 降为 128vp，描边由 12vp 调为 8vp，容器高度同步设为 128vp；三项热量数字位于同一底部遮罩层内，避免环与数值错位或裁切。
 - `_tools/verify_all.py` 的主卡判据同步为三项热量与三项宏量标签，轮播像素差分仍定位首条提示并检查主卡锚点。
@@ -505,3 +535,105 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
   2. 「我的 → 版本与授权」卡实机渲染，两行文案均出现；
   3. 饮水页「连续达标」火焰图标仍为橙色 —— `streak_orange` 替换 `premium_orange` 后未变灰。
 - 截图：`_tools/shots/free_header.jpeg`、`free_profile.jpeg`、`free_license.jpeg`、`free_water.jpeg`；日志：`work/nutriscan-ui-fidelity-20261019/evidence/verification-20261020-free-version.txt`。
+
+### 12.15 步数自动采集的构建与验证（2026-10-20 10:23–11:00）
+
+- 新增**计步传感器自动采集**（`SensorId.PEDOMETER`），替换原先的「本地模拟步数」。设计见 §13。
+- 主包构建：`assembleHap` BUILD SUCCESSFUL；HAP `entry/build/default/outputs/default/entry-default-unsigned.hap`，2,894,189 字节，SHA-256 `ccc076dd9ff2261bf089bb9f291bbf7e544ff55e22154135e847ce76fad342d5`。
+- **既有 UI 回归未受影响**：`_tools/verify_all.py` **10 passed、1 skipped、0 failed（11 项）**，轮播横带像素变化 16.6%、主卡锚点变化 0.00%。
+- **模拟器实机确认**（Mate 90 Pro）：
+  1. 冷启动时 `hilog` 出现 `status=need_permission detail=需要动作权限` —— 传感器存在，但**没有弹权限框**（静默启动策略生效）；
+  2. 运动页点「开启自动采集」→ 弹出系统权限框，文案为「用于读取计步传感器，自动统计你当日走的步数，让步数目标进度真实可信」；
+  3. 授权后 `hilog` 出现 `status=running detail=计步传感器已订阅`，随后有 `cumulative=0 steps=0 rebased=false reason=沿用当日基线 written=true` —— **订阅→读数→基线→落库→界面**整条链路打通；
+  4. 步数卡来源角标显示「传感器自动」，自动采集卡状态显示「已开启」；
+  5. 落库节流：40 秒内只有 **4 次**写库（每 10 秒 1 次）。加节流前实测是**每 150 ms 一次**（模拟器的计步器持续推 0 值），不节流会高频写 RDB。
+- **新增 ohosTest 单元测试模块**（`entry/src/ohosTest/`），跑的是**真实生产代码**（不是等价实现复写）：
+  - 说明：项目里原本就有一个 `entry/src/ohosTest/` 目录，但那是 DevEco 生成的**空模板骨架** ——
+    `module.json5` 里没有 `abilities`、没有 `pages`，只有一份 `Ability.test.ets` 的占位断言，
+    **从来没有 TestAbility，也从来没跑起来过**。本轮把它补成可运行的模块：
+    加 `TestAbility` + `OpenHarmonyTestRunner` + 资源目录，替换掉那个占位测试文件。
+  - `StepBaseline.test.ets` —— 18 项，覆盖首次使用/同日累计/跨天时间比例拆分/计数回退(重启)/负值钳制/时间戳单位自标定；
+  - `ActivityRepository.test.ets` —— 4 项，在**真实 RDB** 上验证「手动值不被传感器覆盖」「恢复自动采集后传感器重新接管」「来源角标文案」；
+  - 结果：**Tests run: 22, Failure: 0, Error: 0, Pass: 22**。
+  - 依赖：新增 `@ohos/hypium`（devDependencies），来自 `https://repo.harmonyos.com/ohpm/`。
+- 跑法见 README「单元测试（ohosTest）」一节。测试包同样未签名，只能装在模拟器/调试设备上。
+- 截图：`_tools/shots/step_page.jpeg`、`step_perm.jpeg`、`step_final.jpeg`。
+- **未完成的**：`运动记录`（类型/时长/热量）仍是手动填写，未接 `SensorId` 的加速度计/陀螺仪；模拟器上计步器不产生真实步数，因此「真实步数累加」这一段只有单测覆盖，没有真机走路的端到端证据。
+
+---
+
+## 13. 步数自动采集（Sensor Service Kit）
+
+### 13.1 数据来源
+
+| 项 | 值 | 出处 |
+|---|---|---|
+| 传感器 | `sensor.SensorId.PEDOMETER`（sensorId **266**，`step counter`） | `openharmony/ets/api/@ohos.sensor.d.ts` |
+| kit | `@kit.SensorServiceKit` → `sensor` | 同上 |
+| 权限 | `ohos.permission.ACTIVITY_MOTION` | `ohos/toolchains/lib/PermissionDefinitions.json` |
+| 权限类型 | **user_grant** —— 声明后仍需运行时弹窗申请 | 同上 |
+| 返回 | `PedometerResponse.steps`（累计值）+ 继承的 `Response.timestamp`（开机后纳秒） | 同上 |
+
+模拟器实测确有该传感器：`hidumper -s SensorService -a '-l'` → `sensorType:PEDOMETER | sensorId: 266 | sensorName: step counter | vendorName: huawei`。
+但**没有** `PEDOMETER_DETECTION`（步行检测），所以"正在走路"的判定必须先 `getSensorList()` 探测，不能假设设备都有。
+
+### 13.2 核心问题：累计值 ≠ 当日步数
+
+传感器给的是**开机以来的累计步数**。要得到"今天走了多少"，必须自己做基线差值。
+本项目在 `services/StepBaseline.ets` 里实现，处理四类基线失效：
+
+| 情况 | 处理 |
+|---|---|
+| 首次使用，无基线 | 设备**今天**开过机 → 累计值全属于今天，基线取 0；否则按"开机至今均匀步速"倒推零点值（**估算**） |
+| 跨天 | 用上次读数→本次读数这一段，按**时间比例**把跨越午夜的步数拆开。整点区间未知时保守处理，明确写进界面说明 |
+| 设备重启 / 传感器复位（累计值回退） | 重新建基线；重启前的步数找不回来，界面会说明 |
+| 时间戳单位异常 | 见 13.3 |
+
+跨天按"均匀步速"拆分是**估算**，不是测量：夜里不走路、白天集中走，分布并不均匀。这一点在界面说明里也写明了。
+
+### 13.3 时间戳单位自标定（一个真踩到的坑）
+
+SDK 文档写 `Response.timestamp` 单位是**纳秒**。但**只靠这一个数验不出单位对不对**：
+设备若按毫秒上报，14 小时的真实时长会被读成 14 小时的"纳秒数"，除以 1e6 后只剩 50 毫秒，
+看起来就像"刚刚开机" → 基线取 0 → **把昨天的步数全算进今天，静默多算几千步**。
+
+所以不靠文档，靠**相邻两次读数的比值实测**：
+
+```
+unit = Δtimestamp / Δ墙上时钟(毫秒)
+```
+纳秒实现得 1e6，毫秒实现得 1，微秒实现得 1e3。标定结果存进基线状态。
+单位一旦变化（与记录值差一倍以上），**当天基线立即作废重建** —— 这是自愈的，不会带着错误的基线跑一整天。
+
+### 13.4 落库节流
+
+实测模拟器上的计步传感器**每 150 ms 推一次**（真机是计步器数值变化才推，但不能指望所有实现都这样）。
+不节流就是每 150 ms 写一次 RDB。
+
+节流方式用**尾沿 + 保留最新值**：任何时候来读数都先存成 pending，每 10 秒把**最新那个值**落库。
+既限住了写入频率，又不会丢掉最后一次读数（丢弃式节流会让最后一段步数永远少算）。
+实测节流后 40 秒内 4 次写库。
+
+### 13.5 手动值优先
+
+| 场景 | 行为 |
+|---|---|
+| 传感器写入 | 若当天 `source = MANUAL_SIMULATED`，**跳过不写**（`ActivityRepository.setSensorSteps` 返回 false） |
+| 用户手动填值 | 写 `MANUAL_SIMULATED`，来源角标变「手动校正」 |
+| 点「恢复自动采集」 | 删掉手动行，传感器重新接管 |
+| 传感器在跑时 | 按钮不是骗人的「开启自动采集」，而是「重新校准今日步数」（把当前累计值当作今日零点） |
+
+### 13.6 权限策略
+
+**冷启动绝不弹权限框。** `EntryAbility` 走 `start(ctx, false)`：已授权就直接订阅，没授权就置为
+`NEED_PERMISSION` 等用户自己去点。只有用户在运动页点了按钮，才走 `start(ctx, true)` 弹权限框。
+
+### 13.7 已知局限（如实列出）
+
+- 模拟器上计步器不产生真实步数，**「真实走路 → 步数累加」这一段没有端到端证据**，只有单测覆盖。
+- 跨天拆分依赖"均匀步速"假设，是估算。
+- 设备重启前的步数无法找回。
+- 运动记录（类型/时长/热量）**仍是手动填写**，未接加速度计/陀螺仪。
+- 「从运动健康导入」未实现：HarmonyOS Health Service Kit 需要在 AppGallery Connect 申请，人工审核约 15 个工作日。
+- 饮食记录**没有官方写入 API**：`healthDataTypes` 里没有任何营养/饮食类型，HMS Core 那套 `HiNutrition` 是 Android 运行时的东西，HarmonyOS NEXT 用不了。饮食明细继续以本地 RDB 为准。
+

@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_test_desc",
+      "value": "CalorieFit 单元测试模块"
+    },
+    {
+      "name": "TestAbility_desc",
+      "value": "运行 CalorieFit 单元测试"
+    },
+    {
+      "name": "TestAbility_label",
+      "value": "CalorieFit Test"
+    }
+  ]
+}

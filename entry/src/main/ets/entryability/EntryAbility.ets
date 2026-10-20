@@ -2,6 +2,7 @@ import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { ThemeService } from '../services/ThemeService';
+import { StepSensorService } from '../services/StepSensorService';
 
 const DOMAIN = 0x0000;
 
@@ -24,6 +25,7 @@ export default class EntryAbility extends UIAbility {
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
       this.restoreTheme();
+      this.startStepSensor();
     });
   }
 
@@ -49,5 +51,19 @@ export default class EntryAbility extends UIAbility {
    */
   private restoreTheme(): void {
       ThemeService.restore(this.context);
+  }
+
+  /**
+   * 静默启动计步采集。
+   *
+   * 传 `requestPermission = false`：**冷启动绝不弹权限框**。
+   * 已授权就直接订阅计步传感器；没授权就置为 NEED_PERMISSION，
+   * 等用户自己在运动页点「开启自动采集」再申请。
+   * 传感器不可用（模拟器、老旧机型）也不影响主流程。
+   */
+  private startStepSensor(): void {
+    StepSensorService.start(this.context, false).catch(() => {
+      hilog.warn(DOMAIN, 'testTag', 'step sensor not started');
+    });
   }
 }
