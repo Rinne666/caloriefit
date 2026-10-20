@@ -1,4 +1,4 @@
-import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, UIAbility, Want, common } from '@kit.AbilityKit';
 import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
@@ -17,6 +17,9 @@ export default class TestAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam) {
     hilog.info(0x0000, 'testTag', '%{public}s', 'TestAbility onCreate');
+    // 把**测试模块自己的** context 放起来：测试用例要读测试包里的 rawfile
+    // （多张真实食物照片），主模块的 resourceManager 读不到同 bundle 下别的模块的资源。
+    AppStorage.setOrCreate<common.UIAbilityContext>('testModuleCtx', this.context);
     const abilityDelegatorArguments: abilityDelegatorRegistry.AbilityDelegatorArgs =
       abilityDelegatorRegistry.getArguments();
     hilog.info(0x0000, 'testTag', '%{public}s', 'start run testcase!!!');

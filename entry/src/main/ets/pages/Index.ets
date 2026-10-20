@@ -37,7 +37,6 @@ import { PrivacyConsentPage } from './PrivacyConsentPage';
 import { PrivacyPolicyPage } from './PrivacyPolicyPage';
 import { PrivacyInventoryPage } from './PrivacyInventoryPage';
 import { AccountPage } from './AccountPage';
-import { BlackboardPage } from './BlackboardPage';
 import { common } from '@kit.AbilityKit';
 import { color, fontSize, pageGradient } from '../common/DesignTokens';
 import { todayKey } from '../common/DateUtils';
@@ -124,11 +123,6 @@ struct Index {
        * 华为账号登录。根节点是 NavDestination，Navigation 才有对象可挂载。
        */
       AccountPage()
-    } else if (name === 'Blackboard') {
-      /**
-       * 今日黑板：便签墙展示当天摄入。根节点是 NavDestination。
-       */
-      BlackboardPage()
     } else if (name === 'FoodLog') {
       /**
        * 全部餐食：从底 Tab 收进二级路由，入口在「我的 → 全部餐食」。

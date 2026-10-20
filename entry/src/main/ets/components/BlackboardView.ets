@@ -1,50 +1,92 @@
 /**
- * 今日黑板 —— 把当天的饮食记录画成一面「黑板 + 便签墙」。
+ * 今日黑板 —— 当日饮食记录的「黑板 + 便签墙」主视图。
  *
- * 形态参考：每条饮食记录 = 一张便签，便签上是抠出来的食物贴纸 + 名称 + 热量；
- * 板面顶部用粉笔字写当日摄入与剩余额度，右下角蹲一只卡通猫。
+ * 布局参考 nosh（小红书《求一个免费的热量记录App》里那款）：
+ *   ① 顶部横排日期胶囊条，当前日期高亮，可点选切换
+ *   ② 「摄入 / 目标」大数字 + 剩余额度
+ *   ③ 食物贴纸卡片横向流（这里用便签形态：胶带 + 歪斜 + 卷边）
+ *   ④ 右下角一只卡通猫
  *
- * 与现有页面的关系：
- *   这是一个**独立页面**，从首页进入，不替换首页的综合页。
- *   首页与其它页面沿用 NutriScan 实测的深色科技风（见 DesignTokens），
- *   黑板页是另一种美术方向（卡通 / 粉笔 / 便签），两者并存而不是互相覆盖。
+ * 与旧版「今日热量半环卡」的关系：半环卡已迁到「进度」页顶部，
+ * 今日页第一屏完全交给黑板 —— 这就是「当日黑板为主体」。
  *
- * 数据口径：
- *   摄入与预算来自 DailySummaryService，与首页同一份口径，不另算一套。
+ * 数据口径：摄入与预算来自 DailySummaryService，与首页/进度页同一份，
+ * 不另算一套。便签内容直接来自当日 food_log。
  */
 
-import { ChalkColors, stickyTilt, stickyColorIndex } from '../common/ChalkTokens';
-import { StickyNoteCard } from '../components/StickyNoteCard';
+import { ChalkColors } from '../common/ChalkTokens';
+import { StickyNoteCard } from './StickyNoteCard';
 import { FoodLog } from '../models/FoodLog';
 import { DailySummary } from '../models/DailySummary';
 import { FoodRepository } from '../repositories/FoodRepository';
+import { MacroRepository, MacroDayTotal } from '../repositories/MacroRepository';
 import { DailySummaryService } from '../services/DailySummaryService';
 import { StickerCutoutService } from '../services/StickerCutoutService';
-import { toDateKey } from '../common/DateUtils';
+import { toDateKey, parseDateKey } from '../common/DateUtils';
 import { MEAL_LABELS } from '../common/Constants';
+import { stickyTilt, stickyColorIndex } from '../common/ChalkTokens';
+
+/** 日期胶囊上的一项 */
+class DateChip {
+  key: string = '';
+  /** 日，如 21 */
+  day: string = '';
+  /** 星期，如 三 */
+  week: string = '';
+
+  constructor(key: string, day: string, week: string) {
+    this.key = key;
+    this.day = day;
+    this.week = week;
+  }
+}
+
+const WEEK_LABELS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 
 @Component
-export struct BlackboardPage {
-  @Consume('navStack') navStack: NavPathStack;
+export struct BlackboardView {
+  @StorageLink('selectedDate') selectedDate: string = '';
   @State summary: DailySummary | null = null;
   @State logs: FoodLog[] = [];
+  /** 当日宏量合计（粉笔字那一行用） */
+  @State macroDay: MacroDayTotal | null = null;
   /** 与 logs 同下标的贴纸 data URI；空串表示该条没有贴纸 */
   @State stickerUris: string[] = [];
-  @State loading: boolean = true;
+  @State chips: DateChip[] = [];
 
   aboutToAppear(): void {
+    this.buildChips();
     this.reload();
   }
 
+  /** 最近 7 天（含今天），按周一为一周之首 */
+  private buildChips(): void {
+    const out: DateChip[] = [];
+    const base = this.selectedDate !== '' ? parseDateKey(this.selectedDate) : new Date();
+    const dow = (base.getDay() + 6) % 7;
+    const monday = new Date(base);
+    monday.setDate(base.getDate() - dow);
+    // 从本周一排到周日；整周都是过去或今天，不含未来
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const key = toDateKey(d);
+      const today = toDateKey(new Date());
+      if (key > today) {
+        continue;
+      }
+      out.push(new DateChip(key, d.getDate().toString(), WEEK_LABELS[i]));
+    }
+    this.chips = out;
+  }
+
   private async reload(): Promise<void> {
-    // 跟随首页选中的日期（AppStorage 'selectedDate'），不是写死「今天」。
-    // 首页有日期选择器，用户切到哪天，黑板就该展示哪天的便签墙 ——
-    // 否则「今天没有记录」会误导成「什么都没记」。
     const picked = AppStorage.get<string>('selectedDate');
     const date = picked !== undefined && picked !== null && picked.length > 0
       ? picked : toDateKey(new Date());
     try {
       this.summary = await DailySummaryService.getSummary(date);
+      this.macroDay = await MacroRepository.getDayTotal(date);
       const logs = await FoodRepository.getByDate(date);
       const uris: string[] = [];
       for (let i = 0; i < logs.length; i++) {
@@ -58,11 +100,9 @@ export struct BlackboardPage {
       this.logs = logs;
       this.stickerUris = uris;
     } catch (_e) {
-      // 读库失败按空态渲染，不让整页崩掉
       this.logs = [];
       this.stickerUris = [];
     }
-    this.loading = false;
   }
 
   private consumed(): number {
@@ -82,44 +122,73 @@ export struct BlackboardPage {
     return this.consumed() > this.budget();
   }
 
+  private macroText(): string {
+    if (this.summary === null) {
+      return '';
+    }
+    const m = this.macroDay;
+    if (m === null) {
+      return '';
+    }
+    return `蛋白 ${Math.round(m.actual.proteinG)}g · 碳水 ${Math.round(m.actual.carbsG)}g · 脂肪 ${Math.round(m.actual.fatG)}g`;
+  }
+
   private mealLabel(mealType: number): string {
     return mealType >= 0 && mealType < MEAL_LABELS.length ? MEAL_LABELS[mealType] : '加餐';
   }
 
-  /** 取第 index 条记录的贴纸 URI */
   private stickerAt(index: number): string {
     return index < this.stickerUris.length ? this.stickerUris[index] : '';
   }
 
-  build() {
-    NavDestination() {
-      Scroll() {
-        Column({ space: 12 }) {
-          this.Board()
-        }
-        .padding({ left: 14, right: 14, top: 12, bottom: 24 })
-        .width('100%')
-      }
-      .width('100%')
-      .height('100%')
-      .scrollBar(BarState.Off)
-      .backgroundColor('#1C2721')
+  private selectDate(key: string): void {
+    if (key === this.selectedDate) {
+      return;
     }
-    .title('今日黑板')
-    .backgroundColor('#1C2721')
-    .onReady(() => {
-      this.reload();
-    })
+    AppStorage.setOrCreate<string>('selectedDate', key);
+    this.selectedDate = key;
+    this.buildChips();
+    this.reload();
   }
 
+  build() {
+    Column({ space: 10 }) {
+      this.DateStrip()
+      this.Board()
+    }
+    .width('100%')
+  }
+
+  /** nosh 式横排日期胶囊条 */
+  @Builder
+  DateStrip() {
+    Row({ space: 6 }) {
+      ForEach(this.chips, (chip: DateChip) => {
+        Column({ space: 1 }) {
+          Text(chip.day)
+            .fontSize(15)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : ChalkColors.CHALK)
+          Text(chip.week)
+            .fontSize(10)
+            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : ChalkColors.CHALK_DIM)
+        }
+        .width(36)
+        .height(46)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(chip.key === this.selectedDate ? '#D5EE6E' : 'transparent')
+        .borderRadius(18)
+        .onClick(() => this.selectDate(chip.key))
+      }, (chip: DateChip) => chip.key)
+    }
+    .width('100%')
+    .padding({ left: 4, right: 4 })
+  }
+
+  /** 木框 + 板面 */
   @Builder
   Board() {
-    // 板面与吉祥物、粉笔槽叠在一起。
-    // 注意：**不要**给板面加 margin 来给吉祥物让位 —— Stack 里的 margin 会把
-    // 子元素挤出父容器，整块黑板随之溢出屏幕（实测左侧文字被裁掉）。
-    // 正确做法是把吉祥物直接叠在板面右下角。
     Stack({ alignContent: Alignment.BottomEnd }) {
-      // 木框 + 板面
       Column() {
         this.Header()
         if (this.logs.length === 0) {
@@ -140,8 +209,8 @@ export struct BlackboardPage {
 
       // 卡通猫趴在右下角
       Image($r('app.media.mascot_cat'))
-        .width(70)
-        .height(70)
+        .width(66)
+        .height(66)
         .objectFit(ImageFit.Contain)
         .margin({ right: 8, bottom: 6 })
 
@@ -158,7 +227,7 @@ export struct BlackboardPage {
       .padding({ left: 12, right: 12, top: 4, bottom: 4 })
       .backgroundColor(ChalkColors.TRAY)
       .borderRadius(6)
-      .margin({ right: 84, bottom: 10 })
+      .margin({ right: 80, bottom: 10 })
     }
     .width('100%')
     .padding(9)
@@ -205,28 +274,38 @@ export struct BlackboardPage {
       .alignItems(HorizontalAlign.End)
     }
     .width('100%')
-    .margin({ bottom: 12 })
+
+    if (this.macroText().length > 0) {
+      Text(this.macroText())
+        .fontSize(12)
+        .fontColor(ChalkColors.CHALK_DIM)
+        .width('100%')
+        .margin({ top: 6 })
+    }
   }
 
-  /** 便签墙 */
+  /** 便签墙：横向滚动，贴近 nosh 的卡片流 */
   @Builder
   Notes() {
-    Flex({ wrap: FlexWrap.Wrap }) {
-      ForEach(this.logs, (log: FoodLog, index: number) => {
-        StickyNoteCard({
-          name: log.name,
-          kcal: log.calories,
-          mealLabel: this.mealLabel(log.mealType),
-          stickerUri: this.stickerAt(index),
-          colorIndex: stickyColorIndex(log.id),
-          tilt: stickyTilt(log.id)
-        })
-        .margin({ right: 8, bottom: 10 })
-      }, (log: FoodLog) => log.id.toString())
+    Scroll() {
+      Row({ space: 10 }) {
+        ForEach(this.logs, (log: FoodLog, index: number) => {
+          StickyNoteCard({
+            name: log.name,
+            kcal: log.calories,
+            mealLabel: this.mealLabel(log.mealType),
+            stickerUri: this.stickerAt(index),
+            colorIndex: stickyColorIndex(log.id),
+            tilt: stickyTilt(log.id)
+          })
+        }, (log: FoodLog) => log.id.toString())
+      }
+      .padding({ right: 26, bottom: 8 })
     }
     .width('100%')
-    // 右下角留给趴在板边的卡通猫，别让便签被压住
-    .padding({ right: 30, bottom: 22 })
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .margin({ top: 12 })
   }
 
   /** 空态：黑板上还什么都没有 */
@@ -237,7 +316,7 @@ export struct BlackboardPage {
         .fontSize(17)
         .fontWeight(FontWeight.Bold)
         .fontColor(ChalkColors.CHALK)
-      Text('去拍一张食物，抠出轮廓贴到这里来')
+      Text('拍一张食物，抠出轮廓贴到这里来')
         .fontSize(13)
         .fontColor(ChalkColors.CHALK_DIM)
       Text('今天记了 0 条')

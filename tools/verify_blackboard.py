@@ -5,7 +5,7 @@
 覆盖三件新东西：
   1. AI 识别页是否产出抠好的贴纸（Canvas destination-out 是否真的生效）
   2. 保存后记录里是否带上了贴纸路径
-  3. 「今日黑板」页是否渲染出便签墙
+  3. 今日页第一屏的黑板是否渲染出便签墙
 
 贴纸本身是**没有文字的 Image 节点**，verify_all.dump() 只收有 text 的节点，
 收不到 —— 所以这里自己读回完整节点树。抠图是否真的透明，交给截图肉眼判定。
@@ -207,14 +207,11 @@ def main():
 
     # ---------- 3. 黑板页 ----------
     print('\n[3] 今日黑板便签墙')
+    # 2026-10-20 起黑板就是今日页第一屏，不再需要点入口
     if not V.home_top():
-        results.append(step('回到今日首页', False))
+        results.append(step('回到今日首页（黑板即主体）', False))
         return report(results)
-    results.append(step('回到今日首页', True))
-    if not V.tap('今日黑板', settle=4.0):
-        results.append(step('进入今日黑板', False))
-        return report(results)
-    results.append(step('进入今日黑板', True))
+    results.append(step('回到今日首页（黑板即主体）', True))
 
     nodes = V.dump()
     # 超预算时右侧文案会变成「已超出」，两种都要认

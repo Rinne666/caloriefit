@@ -171,7 +171,7 @@ def home_top():
             if not tap('今日', settle=2.5):
                 return False
             scroll_top()
-            return has(dump(), '今日热量')
+            return has(dump(), '今日摄入')
         back()
     return False
 
@@ -225,7 +225,7 @@ def enable_demo_mode():
     if not tap('今日', settle=2.5):
         return False
     scroll_top()
-    return has(dump(), '今日热量')
+    return has(dump(), '今日摄入')
 
 
 def accept_privacy_for_test():
@@ -317,7 +317,7 @@ def fill_body_data(values):
 
 def complete_onboarding_for_test():
     """全新同意/数据删除后的首启会进入六步引导，完成它再测主页面。"""
-    if has(dump(), '今日热量'):
+    if has(dump(), '今日摄入'):
         print('    模拟器已有完成引导的用户，保留现有数据并跳过首启引导')
         return True
 
@@ -333,7 +333,7 @@ def complete_onboarding_for_test():
     ]
     for title, cta in sequence:
         nodes = dump()
-        if has(nodes, '今日热量'):
+        if has(nodes, '今日摄入'):
             return True
         if not has(nodes, title):
             print(f'    引导步骤未到预期页面：{title}')
@@ -345,7 +345,7 @@ def complete_onboarding_for_test():
         if not tap(cta, settle=3.0 if cta == '开始使用' else 1.0):
             print(f'    引导 CTA 不可用：{cta}（{title}）')
             return False
-    if not has(dump(), '今日热量'):
+    if not has(dump(), '今日摄入'):
         return False
 
     # 引导应当把用户填的体征写进档案，且**不出现旧版伪造的默认值**。
@@ -364,7 +364,7 @@ def complete_onboarding_for_test():
     if not tap('今日', settle=2.5):
         return False
     scroll_top()
-    return has(dump(), '今日热量')
+    return has(dump(), '今日摄入')
 
 
 def find_and_tap(kw, max_scroll=12, settle=2.5):
@@ -420,11 +420,26 @@ def check(name, fn):
 # ---------------- 各项检查 ----------------
 
 def c_home():
+    """今日页主体是黑板：板面概览 + nosh 式日期胶囊条。
+
+    2026-10-20 起，当日黑板成为今日页第一屏主体，原版复刻的「今日热量」
+    半环卡已从首页移除（其数据在进度页仍在），所以这里验的是黑板。
+    """
     ok = home_top()
     nodes = dump()
-    required = ('今日热量', '剩余 kcal', '已摄入 kcal', '目标 kcal', '蛋白质', '碳水', '脂肪')
+    required = ('今日摄入', '还可以吃', 'kcal', '蛋白', '碳水', '脂肪')
     rendered = all(has(nodes, text) for text in required)
-    return ok and rendered, '主卡显示热量半环三项数据与宏量条'
+    return ok and rendered, '黑板表头显示摄入/剩余与宏量摘要'
+
+
+def c_date_strip():
+    """nosh 式横排日期胶囊条：显示本周日期，当日高亮。"""
+    if not home_top():
+        return False, '无法回到今日首页'
+    nodes = dump()
+    # 胶囊上写的是**独立**的星期单字文本节点；用包含匹配会被别的文案误命中
+    exact = [n for n in nodes if n['text'] in ('一', '二', '三', '四', '五', '六', '日')]
+    return len(exact) >= 3, f'日期胶囊条渲染（{len(exact)} 个星期单字）'
 
 
 def c_ai_entry():
@@ -497,7 +512,7 @@ def c_carousel():
     y = center(hit['bounds'])[1]
     print(f'    轮播条 y={y}（按 UI 树定位，非写死坐标）')
 
-    hero = next((n for n in nodes if n['text'] == '今日热量'), None)
+    hero = next((n for n in nodes if n['text'] == '今日摄入'), None)
     if hero is None:
         return False, '主卡标题不在当前视口，无法确认页面滚动位置'
     hero_y = center(hero['bounds'])[1]
@@ -564,33 +579,30 @@ def relaunch_app():
 
 
 def c_blackboard_page():
-    """今日黑板页可达。
+    """今日黑板就在今日页第一屏（不再是二级页面）。
 
     只做只读检查 —— 不写入任何饮食记录，避免污染回归流程的数据状态。
     需要写入记录的完整链路（抠图 → 保存 → 便签墙）在 verify_blackboard.py 里验。
     """
     if not home_top():
         return False, '无法回到今日首页'
-    if not tap('今日黑板', settle=3.5):
-        return False, '今日黑板入口不可达'
     nodes = dump()
     # 超预算时右侧文案会变成「已超出」，两种都要认
     ok = has(nodes, '今日摄入') and (has(nodes, '还可以吃') or has(nodes, '已超出'))
-    back()
-    return ok, '黑板表头渲染（今日摄入 + 剩余额度）'
+    return ok, '今日页第一屏即黑板（摄入 + 剩余额度）'
 
 def ensure_today_tab():
     """从个人页或子路由回到今日主 Tab，避免误把不可见子页当成产品故障。"""
     for _ in range(5):
         nodes = dump()
-        if has(nodes, '今日热量'):
+        if has(nodes, '今日摄入'):
             return True
         if any(n['text'] == '今日' for n in nodes) and tap('今日', settle=2.5):
             scroll_top()
-            if has(dump(), '今日热量'):
+            if has(dump(), '今日摄入'):
                 return True
         back()
-    return has(dump(), '今日热量')
+    return has(dump(), '今日摄入')
 
 
 def c_privacy_collected_inventory():
@@ -766,7 +778,8 @@ def main():
     check('华为账号登录入口', c_account_login); shot('v_15_account')
     back()
 
-    check('今日黑板入口与表头', c_blackboard_page); shot('v_16_blackboard')
+    check('今日黑板即今日页主体', c_blackboard_page); shot('v_16_blackboard')
+    check('nosh 式日期胶囊条', c_date_strip); shot('v_17_date_strip')
 
 
     print('\n================ 汇总 ================')

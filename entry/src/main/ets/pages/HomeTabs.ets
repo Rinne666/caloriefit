@@ -18,34 +18,12 @@
 import { color, fontSize, space, radius, layout, glassShadow } from '../common/DesignTokens';
 import { HomePage } from './HomePage';
 import { FoodEditParams } from './HomePage';
-import { toDateKey, parseDateKey, isFutureDate, displayDate } from '../common/DateUtils';
+
 
 @Component
 export struct HomeTabs {
   @Consume('navStack') navStack: NavPathStack;
   @StorageLink('selectedDate') selectedDate: string = '';
-
-  private todayLabel(): string {
-    const key = this.selectedDate !== '' ? this.selectedDate : toDateKey(new Date());
-    return key === toDateKey(new Date()) ? '今天' : displayDate(key);
-  }
-
-  private showDatePicker(): void {
-    const key = this.selectedDate !== '' ? this.selectedDate : toDateKey(new Date());
-    this.getUIContext().showDatePickerDialog({
-      start: new Date(2020, 0, 1),
-      end: new Date(2100, 11, 31),
-      selected: parseDateKey(key),
-      onDateAccept: (value: Date) => {
-        const nextKey = toDateKey(value);
-        if (isFutureDate(nextKey)) {
-          this.getUIContext().getPromptAction().showToast({ message: '不允许查看未来日期' });
-          return;
-        }
-        AppStorage.setOrCreate<string>('selectedDate', nextKey);
-      }
-    });
-  }
 
   /**
    * 免费版标识。
@@ -68,34 +46,21 @@ export struct HomeTabs {
       .borderRadius(radius.pill)
   }
 
+  /**
+   * 顶部只剩「全部功能免费」标识。
+   *
+   * 原来这里还有一个日期选择按钮（�� 今天），现在**移进黑板**了 ——
+   * 黑板顶部是 nosh 式的横排日期胶囊条，点哪一天就显示哪天的黑板。
+   * 两处同时存在会让人以为它们联动，其实语义不同。
+   */
   @Builder
   TodayHeader() {
-    Row({ space: space.xs }) {
-      Button() {
-        Row({ space: 6 }) {
-          Text('‹')
-            .fontSize(24)
-            .fontColor(color.activity)
-          Text(this.todayLabel())
-            .fontSize(fontSize.body)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(color.text)
-            .maxLines(1)
-        }
-      }
-      .height(36)
-      .padding({ left: 12, right: 14 })
-      .backgroundColor(color.bg)
-      .border({ width: 1, color: color.border })
-      .borderRadius(radius.pill)
-      .onClick(() => this.showDatePicker())
-
-      Blank().layoutWeight(1)
-
+    Row() {
       this.FreeBadge()
+      Blank().layoutWeight(1)
     }
     .width('100%')
-    .padding({ left: layout.pagePadding, right: layout.pagePadding, top: 8, bottom: 8 })
+    .padding({ left: layout.pagePadding, right: layout.pagePadding, top: 8, bottom: 4 })
   }
 
   /**
