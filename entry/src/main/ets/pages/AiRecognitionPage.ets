@@ -571,14 +571,13 @@ export struct AiRecognitionPage {
                         .fontColor(color.textHint)
 
                       Column({ space: 4 }) {
-                        // 白色圆角容器 = 贴纸的白边效果
+                        // 白边已经烘进贴纸 PNG（沿食物轮廓的模切纸边），
+                        // 这里不再套白色圆角容器，否则又变成「方框里裁了一块照片」
                         Image(this.stickerPreviewUri)
                           .width(92)
                           .height(92)
                           .objectFit(ImageFit.Contain)
-                          .padding(5)
-                          .backgroundColor('#FFFFFF')
-                          .borderRadius(14)
+                          .shadow({ radius: 6, color: '#33000000', offsetX: 0, offsetY: 3 })
                         Text('食物轮廓贴纸')
                           .fontSize(fontSize.caption)
                           .fontColor(color.primary)

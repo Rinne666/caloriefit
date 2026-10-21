@@ -33,8 +33,11 @@ export class Compliance {
    * 隐私政策版本号。
    * 正式发布前应从 draft-* 改为正式版本；政策内容实质变更时递增，
    * 会让已同意旧版本的用户重新走首启同意流程。
+   *
+   * 2026-10-21：AI 识别默认服务方由阿里云百炼改为 OpenCSG（opencsg.com），
+   * 第三方接收方发生实质变化，故递增版本号。
    */
-  static readonly POLICY_VERSION: string = 'draft-2026-10-19-1';
+  static readonly POLICY_VERSION: string = 'draft-2026-10-21-1';
 
   /** 尚未填写的字段名。全部补齐后清空，本应用即视为可发布。 */
   static readonly PENDING_FIELDS: string[] = [

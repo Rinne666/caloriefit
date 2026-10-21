@@ -18,6 +18,7 @@ import { migrateV2ToV3 } from './MigrationV2ToV3';
 import { migrateV3ToV4 } from './MigrationV3ToV4';
 import { migrateV4ToV5 } from './MigrationV4ToV5';
 import { migrateV5ToV6 } from './MigrationV5ToV6';
+import { migrateV6ToV7 } from './MigrationV6ToV7';
 
 const DOMAIN = 0x0001;
 const TAG = 'CalorieFitDB';
@@ -109,6 +110,8 @@ export class Database {
     await migrateV4ToV5(store);
     // V5 → V6 增加食物贴纸路径列（新增库与存量库走同一条路径）。
     await migrateV5ToV6(store);
+    // V6 → V7 建黑板画布的节点表与设置表。
+    await migrateV6ToV7(store);
     store.version = DATABASE_VERSION;
     Database.store = store;
     return store;
@@ -138,6 +141,9 @@ export class Database {
       // 用户会以为没清成功。
       await store.executeSql('DELETE FROM water_log');
       await store.executeSql('DELETE FROM fasting_log');
+      // 黑板节点是饮食记录的投影，记录清了节点也必须跟着清，
+      // 否则黑板上会留下一堆指向已删记录的孤儿贴纸。
+      await store.executeSql('DELETE FROM board_node');
       store.commit();
     } catch (e) {
       const err = e as BusinessError;
@@ -159,6 +165,8 @@ export class Database {
       await store.executeSql('DELETE FROM fasting_log');
       await store.executeSql('DELETE FROM body_profile');
       await store.executeSql('DELETE FROM app_settings');
+      await store.executeSql('DELETE FROM board_node');
+      await store.executeSql('DELETE FROM board_setting');
       store.commit();
     } catch (e) {
       const err = e as BusinessError;

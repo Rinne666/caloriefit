@@ -115,18 +115,22 @@ SDK schema（`hms/toolchains/configcheck/configSchema_rich.json`）对它的描�
 
 ## 2. 信息架构对齐情况
 
-### 2.1 底 Tab（4 个）
+### 2.1 底 Tab（3 个）
 
 > **2026-10-20 产品决策：「膳食」Tab 与今日下的「饮水 / 断食」子页下线**，
 > 聚焦「热量记录 + 今日黑板」。已下线的页面代码、Repository 与回归检查项全部删除，
 > 隐私政策与双清单同步改写（详见 §11.7）。
+>
+> **2026-10-21 产品决策：「营养师」Tab 下线**（原本只是 ComingSoon 占位，
+> 服务端对话协议未知，保留一个点不动的入口对用户没有价值；`NutriBitesPage.ets` 已删），
+> 底部收敛为 **今日 / 进度 / 我的** 三个 Tab。
+> 同日**底栏去掉文字标签，只保留图标按钮**（详见 §16）。
 
 | Tab | NutriScan 对应 | CalorieFit 实现 | 状态 |
 |---|---|---|---|
 | 启动/引导 | splash_screen + setup_screen | `OnboardingPage.ets` 6 步 | ✅ 结果真实落库（含体征手填） |
 | 今日 | 个人记录 | `HomeTabs.ets` → `HomePage.ets` | ✅ 热量主卡 + 今日黑板入口 |
 | 进度 | Progress（Today/Week/30 Days + Readiness） | `ProgressPage.ets` | ✅ 图表真实数据 / Readiness 占位 |
-| 营养师 | NutriBites（AI 对话） | `NutriBitesPage.ets` | ⚠ 未实现跳转 |
 | 我的 | You（8 个二级入口） | `ProfilePage.ets` | ✅ 入口全立，2 个实页 + 6 个占位 |
 
 ### 2.1.1 引导流程
@@ -561,22 +565,27 @@ hdc install entry/build/default/outputs/default/entry-default-unsigned.hap
 
 #### AI 功能的资质门槛（本项目最大的发布风险）
 
-**先厘清一个容易搞错的概念：阿里云与本项目是什么关系。**
+**先厘清一个容易搞错的概念：模型服务方与本项目是什么关系。**
 
 本项目的 AI 是 **BYOK（自带 Key）模式**：
 - API Key **由用户在设置页自己填**，掏钱、签约、开账号的是**用户**，不是开发者；
 - 开发者没有自有业务服务器中转，与该服务方不存在代理或转售关系；
-- **但 Base URL 并不是完全自由的**：`AiSettingsPage.validateBaseUrl()` 硬校验 host 必须是
-  `dashscope.aliyuncs.com` 或 `*.maas.aliyuncs.com`，即**阿里云百炼域名**。
-  换句话说，真实识别请求**只可能发给阿里云**，用户能改的只是地域/子域名。
+- **但 Base URL 并不是完全自由的**：`AiSettingsPage.validateBaseUrl()` 硬校验 host 必须在
+  `opencsg.com`（**OpenCSG，默认**）、`dashscope.aliyuncs.com` 或 `*.maas.aliyuncs.com`
+  （**阿里云百炼，备用**）之内。换句话说，真实识别请求**只可能发给这两家**，
+  用户能改的只是这两家内部的地域/子域名与模型名。
+
+> 2026-10-21 变更：默认服务方由阿里云百炼切到 **OpenCSG**（`https://opencsg.com/aigateway/v1`，
+> 默认模型 `deepseek-v4.1-flash-1017`），百炼保留为可选项。详见 §14。
 
 所以准确的说法是：
 
 | | |
 |---|---|
-| 阿里云是不是"第三方大模型服务方"？ | **是**，而且是唯一的一个（域名白名单锁死） |
-| 开发者是不是阿里云的"合作方"？ | **不是**。没有合同关系，拿不出「双方合作协议」；用户的 Key 与账号是他自己的 |
-| 开发者能不能提供"第三方大模型算法备案截图"？ | **能** —— 阿里云 qwen 系列的备案编号在 [beian.cac.gov.cn](https://beian.cac.gov.cn/#/home) 公开可查，这正是审核要的那份材料 |
+| 阿里云是不是"第三方大模型服务方"？ | **是**，但**不再是唯一的一个**（白名单锁在 OpenCSG + 阿里云两家） |
+| OpenCSG 是不是"第三方大模型服务方"？ | **是**，且是**默认**服务方（`opencsg.com`，国内合规的模型聚合网关） |
+| 开发者是不是这些服务方的"合作方"？ | **不是**。没有合同关系，拿不出「双方合作协议」；用户的 Key 与账号是他自己的 |
+| 开发者能不能提供"第三方大模型算法备案截图"？ | **能** —— 阿里云 qwen 系列的备案编号在 [beian.cac.gov.cn](https://beian.cac.gov.cn/#/home) 公开可查；OpenCSG 作为持牌聚合平台同样有可查的备案信息，这正是审核要的那份材料 |
 
 官方触发条件（华为与 vivo 口径一致）：
 
@@ -626,9 +635,11 @@ vivo 开放平台《AI 深度合成类应用上架指引》2.1 资质要求（�
 
 「单机 APP」判定和 AI 申报口径是**互相拉扯**的。两个关键前提：
 
-1. 本项目是 **BYOK 模式**——API Key 由用户自己填，掏钱签约的是用户，**开发者与阿里云没有合作关系，也拿不出「双方合作协议」**；
-2. 但 **Base URL 被 `validateBaseUrl()` 锁在百炼域名**（`dashscope.aliyuncs.com` / `*.maas.aliyuncs.com`），
-   所以真实识别的接收方**只可能是阿里云**——它既是唯一服务方，也是审核要的「第三方大模型」那份备案截图的对象。
+1. 本项目是 **BYOK 模式**——API Key 由用户自己填，掏钱签约的是用户，**开发者与模型服务方没有合作关系，也拿不出「双方合作协议」**；
+2. 但 **Base URL 被 `validateBaseUrl()` 锁在已声明的服务方域名**内（`opencsg.com`（**OpenCSG，默认**）、
+   `dashscope.aliyuncs.com` / `*.maas.aliyuncs.com`（**阿里云百炼**）），
+   所以真实识别的接收方**只可能是这两家**——它们既是服务方，也是审核要的「第三方大模型」那份备案截图的对象。
+   （2026-10-21 起默认是 OpenCSG，详见 §14。）
 
 | | 路径 A：按「工具/客户端」申报 | 路径 B：与阿里云签服务采购/授权文件 | 路径 C：发布版不含 AI |
 |---|---|---|---|
@@ -636,7 +647,7 @@ vivo 开放平台《AI 深度合成类应用上架指引》2.1 资质要求（�
 | 开发者资质 | 阿里云大模型算法备案截图（公开可查）；**合作协议拿不出**；主张不做安全评估报告 | 第三方大模型算法备案截图 + **合作协议/授权文件/采购订单** + 安全评估报告 | 无 |
 | 现实可行性 | ⚠️ 备案截图能交，合作协议交不出；**是否接受由审核方判定** | 需商务采购，自担安全评估责任与内容合规责任 | ✅ 最快 |
 | 备案 | 保守做法仍建议按「服务器在中国大陆」完成备案，或请审核方确认豁免 | 同左 | 可勾「单机 APP」，免备案 |
-| 商店隐私政策 | 必须写清第三方接收方（阿里云百炼）的法定主体、留存期限、隐私政策链接 | 同左 | 无第三方接收方 |
+| 商店隐私政策 | 必须写清第三方接收方（OpenCSG / 阿里云百炼）的法定主体、留存期限、隐私政策链接 | 同左 | 无第三方接收方 |
 | 与「一比一还原」的关系 | 保留 AI 功能 | 保留 | 与原版有偏差，需在交付说明里显式披露 |
 | 必做项 | AGC 填「AI 功能声明」；内容显性标识；隐私政策披露接收方 | 同左 | — |
 
@@ -898,11 +909,23 @@ AppGallery 上已有：
 只有外接框 → **圆角**矩形（四角透明，贴纸感强；硬矩形裁完只是一张普通缩略图）；
 都没有 → 中心椭圆。抠完再裁到实际不透明区域的包围盒，避免贴纸里大片空白。
 
+> ⚠️ **2026-10-21 已改**：上面这套「按多边形直接填」的抠法，出来的是**裁了一块照片**，
+> 不是 nosh 那种剪贴贴纸。现在改成「先验 + 边界带颜色模型精修 + 抗锯齿 + 白色模切边」，
+> 详见 **§15**。本节保留原样，记录当时的做法与踩过的坑。
+
 **落库**：V6 迁移给 `food_log` 加 `sticker_path` 列，用 `ALTER TABLE ADD COLUMN`
 （加可空列是 SQLite 最安全的迁移，不动既有行、不碰 CHECK 约束、不用重建索引）。
 新建库与存量库走同一条路径，不搞「新建库有列、存量库没列」两套结构。
 
 #### 11.7.3 今日黑板：便签墙
+
+> **2026-10-21 已整体重做，详见 §17。**
+> 下面这段描述的是**改造前**的形态：一条只能看、不能摆的横向便签卡流。
+> 现在今日黑板是**可自由摆放的手帐画布**（拖拽/缩放/旋转/置顶/规整/视图切换/分栏），
+> 贴纸与便签的组件、配色与美术方向也一并换了地方：
+> `components/StickyNoteCard.ets` 与 `common/ChalkTokens.ets` **已删除**（无人引用），
+> 新的实现是 `components/FoodStickerItem.ets`、`components/StickyNoteItem.ets`
+> 与 `models/BoardModels.ets` 里的 `paperColors()` / `boardThemeColors()`。
 
 黑板页 `BlackboardPage.ets`：木框 + 墨绿板面，顶部粉笔字写当日摄入与剩余额度，
 右下角蹲一只卡通猫（`mascot_cat.svg`），中间是便签墙 —— 每条饮食记录一张便签，
@@ -1154,7 +1177,7 @@ rawfile 是**扁平**目录不支持子路径；同 bundle 下**不同模块的�
 | 3 | 计步传感器已如实披露 | PASS |
 | 4 | 隐私政策全文可打开 | PASS |
 | 5 | 政策写明计步传感器来源 | PASS |
-| 6 | **政策写明百炼域名限定** | PASS |
+| 6 | **政策写明接收方域名限定** | PASS（该轮为百炼；2026-10-21 起默认改为 OpenCSG，见 §14） |
 | 7 | **政策写明开发者与接收方无合作关系** | PASS |
 | 8 | **从政策页返回后回到同意页**（不退出应用） | PASS（`onBackPress` 修复） |
 | 9 | 进入引导首屏 | PASS |
@@ -1318,3 +1341,476 @@ unit = Δtimestamp / Δ墙上时钟(毫秒)
 - 「从运动健康导入」未实现：HarmonyOS Health Service Kit 需要在 AppGallery Connect 申请，人工审核约 15 个工作日。
 - 饮食记录**没有官方写入 API**：`healthDataTypes` 里没有任何营养/饮食类型，HMS Core 那套 `HiNutrition` 是 Android 运行时的东西，HarmonyOS NEXT 用不了。饮食明细继续以本地 RDB 为准。
 
+
+---
+
+## 14. AI 识别默认服务方切换到 OpenCSG（2026-10-21）
+
+### 14.1 结论先给
+
+App 内置食物识别的**默认**服务方已从阿里云百炼切到 **OpenCSG 模型网关**：
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| Base URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `https://opencsg.com/aigateway/v1` |
+| 默认模型 | `qwen3-vl-plus` | `deepseek-v4.1-flash-1017` |
+| 白名单 | 仅百炼域名 | **OpenCSG + 百炼**（两家，用户可切换） |
+| 凭证别名 | `caloriefit_dashscope_key` | `caloriefit_ai_key`（旧别名会被主动清理） |
+
+**百炼没有被删掉**，仍可在「我的 → AI 食物识别设置」里把 Base URL 改回去，模型名随便填。
+白名单从「锁死一家」放宽到「锁死两家」这件事本身，对上架申报的影响见 §14.6。
+
+### 14.2 为什么这个模型能用
+
+网关的 `/models` 目录里 `deepseek-v4.1-flash-1017` 的 `task` 字段写的是
+`text-generation`（**纯文本**），按目录字面看它不能吃图片 —— 但实测**能吃**：
+
+```
+请求体：OpenAI 兼容 content 数组，含 {type:"image_url", image_url:{url:"data:image/jpeg;base64,..."}}
+返回：  usage.prompt_tokens_details.image_tokens = 382   ← 图片确实进了上下文
+```
+
+这条**必须实测、不能看目录字段下结论**：`/models` 的 `task` 只反映网关的路由分类，
+没有反映上游模型的多模态能力。若照目录把它当纯文本模型，食物识别会直接跑不通。
+
+### 14.3 代码改动清单
+
+| 文件 | 改了什么 |
+|---|---|
+| `entry/src/main/ets/common/AiConstants.ets` | `AiDefaults.BASE_URL` / `MODEL_NAME` 改为 OpenCSG；`AI_SECRET_ALIAS` 改为与厂商无关的 `caloriefit_ai_key`，并新增 `AI_LEGACY_SECRET_ALIAS`；额度/限流错误文案去掉「百炼」字样 |
+| `entry/src/main/ets/pages/AiSettingsPage.ets` | `validateBaseUrl()` 白名单改为 `opencsg.com` / `dashscope.aliyuncs.com` / `maas.aliyuncs.com`（后两个按 `host === x \|\| host.endsWith('.' + x)` 匹配，保留 `*.maas.aliyuncs.com` 的原有能力）；toast 与 placeholder 同步 |
+| `entry/src/main/ets/services/AiHttpClient.ets` | 请求头加 `Accept-Encoding: identity`（网关默认压缩响应体，不声明会拿到 gzip 字节流）；新增 400 → `INVALID_CONFIG`（模型名不存在等配置问题不该报「无法解析」） |
+| `entry/src/main/ets/repositories/AiCredentialStore.ets` | 存 Key 后主动删除旧别名条目，避免换服务方后在系统安全存储里留一份孤儿凭证（失败不影响本次保存） |
+| `entry/src/main/ets/models/PrivacyInventory.ets`<br>`components/PrivacyInventoryContent.ets`<br>`components/PrivacyPolicyContent.ets` | 第三方接收方披露改为「OpenCSG 模型网关（opencsg.com）或阿里云百炼（DashScope）及其子域名」，与实际白名单一致 |
+| `entry/src/main/ets/common/Compliance.ets` | `POLICY_VERSION` 由 `draft-2026-10-19-1` 递增到 `draft-2026-10-21-1` —— 接收方发生实质变化，已同意旧版的用户需重新走首启同意流程 |
+| `tools/verify_ai_opencsg.py` | **新增**。从 App 源码原样抠 system/user prompt、复刻 `buildRequestBody` 与 `AiResponseParser` 判定，用仓库里已入库的食物照片跑真实网关 |
+| `tools/verify_all.py` | 「第三方共享个人信息清单」回归项的必填文本加上 `OpenCSG`（原先只断言 `阿里云百炼`，改了默认服务方后就不够用了） |
+
+**密钥没有进仓库**。`tools/verify_ai_opencsg.py` 按 `OPENCSG_KEY` 环境变量读取，
+取不到时回落到本机 `~/.minimax/config.yaml` 的 `provider.opencsg.options.apiKey` ——
+与仓库既有的「密钥不入库」规矩一致。
+
+### 14.4 端到端验证（模拟器实跑，不是只调接口）
+
+**构建**：`hvigorw --mode module -p product=default -p buildMode=debug assembleHap --no-daemon`
+→ BUILD SUCCESSFUL，33 tasks；产物 `entry/build/default/outputs/default/entry-default-unsigned.hap`，
+2,925,553 字节，SHA-256 `c4e919069b0bdc0743e7792a117fcb320b37c84c8e66577fe8b66674f4490fd5`。
+（本机 macOS 需先 `export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk`，否则 hvigor 报 00303217。）
+
+**装包**：先 `hdc uninstall` 再 `hdc install`（§9.1 那个坑：同版本 `install -r` 不替换资源表）。
+
+**真机跑通全链路**（Mate 90 Pro 模拟器，真实网络请求）：
+
+1. 首次启动同意页 → 隐私政策版本号已随本次变更递增，走的是新版本；
+2. 「我的 → AI 食物识别设置」：默认 Base URL = `https://opencsg.com/aigateway/v1`、
+   默认模型 = `deepseek-v4.1-flash-1017`（截图核对过页面默认值）；
+3. 填入用户自己的 Key → 「API Key（已存储，输入可更换）」，掩码长度 55 与 Key 实际长度一致（没被截断）；
+4. 「拍照识别食物 → 没有照片？用内置示例图试一下 → 开始 AI 识别」；
+5. 上传确认窗如实显示接收方 `https://opencsg.com/aig...`；
+6. 点「同意并识别」→ **真实请求打到网关**，返回：
+   - 食物名 `鸡胸肉藜麦沙拉`
+   - 热量 `420 kcal`
+   - 蛋白 38g / 碳水 38g / 脂肪 12g → Atwater 回算 412 kcal，偏差 **1.9%**（容差 20%，宏量保留）
+   - 置信度 0.72
+   - 备注「鸡胸约120g、藜麦约100g熟重、蔬菜少量，**无可见酱汁**」—— 与示例图逐项对得上
+   - `foodBox` / `foodPolygon` 有效 → **食物轮廓贴纸抠图成功**（见 §14.5 证据图）
+
+**批量回归**（`tools/verify_ai_opencsg.py`，仓库内 6 张真实食物照）：
+
+| 样本 | 识别结果 | kcal | P/C/F | Atwater 偏差 | 耗时 |
+|---|---|---|---|---|---|
+| food0 | 烤鸡红椒芝士汉堡（两个） | 1300 | 70/110/62 | 1.7% | 4.9s |
+| food1 | 油炸鸡肉块 | 280 | 22/10/17 | 0.4% | 4.9s |
+| food2 | 鸡蛋仔球配草莓酱 | 620 | 16/88/24 | 1.9% | 7.5s |
+| food3 | 椰蓉夹心曲奇三明治 | 780 | 8/96/40 | 0.5% | 4.8s |
+| food4 | 鲜虾蔬菜炒意面 | 620 | 30/78/20 | 1.3% | 5.2s |
+| food5 | 奶油白酱宽面 Fettuccine Alfredo | 780 | 24/78/40 | 1.5% | 7.2s |
+
+6/6 通过全部 App 侧校验（foodName 长度、kcal 区间、confidence 区间、notes 长度、
+宏量 Atwater 自洽、foodBox 0~1000 坐标、foodPolygon ≥3 顶点）。
+
+**延迟**：1280px / 238KB 的图，三次实测 5.3s / 6.0s / 6.6s，离 App 的 30s 超时有充足余量。
+
+**全量 UI 回归**（`tools/verify_all.py`，14 项）：**14 passed、0 skipped、0 failed**。
+含「第三方共享个人信息清单」这项 —— 它的必填文本已加上 `OpenCSG`（见 §14.3），改完照样通过。
+
+**注意**：App 的 API Key 默认**不落盘**（`AiDefaults.REMEMBER_KEY = false`），只存在当前会话内存里，
+**重启 App 后需要重新填**。要持久化就打开「安全记住 API Key」（存进系统 Asset Store，不进普通配置）。
+
+### 14.5 证据
+
+- 模拟器识别结果截图：`work/opencsg-ai-provider-20261021/evidence/ai-recognition-opencsg-deepseek.jpeg`
+  （含「原图 → 食物轮廓贴纸」两张图 —— 贴纸是模型给的坐标抠出来的，不是本地写死的）
+- 网关批量回归日志：`work/opencsg-ai-provider-20261021/evidence/verify_all-20261021.log`
+- 复跑命令：
+  ```bash
+  # 1) 网关 + App 解析规则的批量校验
+  OPENCSG_KEY=gk_xxx python3 tools/verify_ai_opencsg.py
+  # 2) 端到端 UI 回归
+  python3 tools/verify_all.py
+  ```
+
+### 14.6 已知局限与用户待办（如实列出）
+
+- **Key 仍需用户自己填**：App 保持 BYOK 模式，密钥不进代码、不进仓库。切到 OpenCSG 后，
+  用户要拿 OpenCSG 的 `gk_` 开头 Key（百炼的 `sk_` Key 不能用在这）。
+- **网关有 TPM 限流**：实测一次纯文本调用返回过
+  `429 {"code":"capacity_exceeded","message":"model capacity exceeded: tpm_exceeded"}`。
+  App 把 429 映射成「请求过于频繁或模型容量已满，请稍后重试」，文案已按此改过。
+- **`AI_RECIPIENT_INFO` 仍是占位符**：OpenCSG 作为接收方的法定主体、留存期限、隐私政策链接，
+  仍需运营主体在 `common/Compliance.ets` 里补真实信息才能上架。
+- **申报口径变了**：白名单从「只有阿里云」变成「OpenCSG + 阿里云」，
+  §11 那张表里的「唯一服务方」表述已同步改掉，但**审核方是否接受「工具/客户端」定位仍由其判定**，
+  合作协议这条路依旧拿不出。
+- **未做真机验证**：以上全部在 macOS 本地模拟器（Mate 90 Pro 镜像）上完成，
+  没有在物理手机上跑过（当前无真机连接）。
+- **未验证多模态之外的模型能力**：`deepseek-v4.1-flash-1017` 的 tool_call 能力在网关目录里标了
+  `support_function_call: true`，但 App 这条链路不依赖工具调用，未做验证。
+
+---
+
+## 15. 贴纸模切化改造：把「裁了一块照片」变成 nosh 的剪贴贴纸（2026-10-21）
+
+### 15.1 问题是什么
+
+§11.7.2 做出来的贴纸是「**按模型多边形裁一块照片**」：多边形是模型用 7~12 个顶点描述的粗略轮廓，
+直接填出来 —— 盘沿、桌布、餐具还留在里面，边缘是折线，再套一个 UI 层的**白色圆角容器**。
+看起来就是「方框里放了一张裁剪照片」，**不是** nosh 那种「食物被抠出来、浮在便签上」的剪贴贴纸。
+
+nosh 的形态是 **die-cut sticker（模切贴纸）**：食物**自身**的轮廓被剪出来，沿轮廓有一圈白纸边。
+
+### 15.2 新抠图算法（`services/StickerMatting.ets`）
+
+```
+模型给的区域（多边形 / 外接框 / 无）      ← 只当「先验」
+   ↓ 倒角距离变换 → 边界带（离先验边界 bandPx 以内）
+   ↓ 带内深处 = 前景样本，带外 = 背景样本 → 量化 RGB 直方图（5bit/通道）
+   ↓ 逐像素前景概率 = sigmoid(log(fg/bg))
+   ↓ 联合双边滤波（以原图为引导，5×5）→ 边界吸附到真实图像边缘
+   ↓ smoothstep → alpha（**带抗锯齿**，不是硬 0/255）
+   ↓ 填洞 + 丢掉零散碎块
+   ↓ 沿轮廓外扩 3~8px → 白色纸边（模切边）
+   ↓ 裁到贴纸实际范围
+```
+
+**为什么只改「边界带」**：试过 GrabCut 式的多轮迭代（全图重估颜色模型 + 图割），
+在多食物照片上**会发散** —— 实测 `food0`（两个汉堡）的覆盖率从 0.606 直接掉到 **0.006**，
+主体被整片抠没。限制在边界带内改判，代价是「抠不到模型框错的那部分」，
+换来的是**永远不会把食物抠空、也不会在食物内部打出洞**。
+
+**为什么不用全图连通域只留最大块**：一张图里有两三个食物时，只留最大块会把另外几个删掉。
+碎块用**相对面积**判定（< 最大块的 2% 才丢），成规模的部分全部保留。
+
+**白色纸边烘进 PNG，而不是 UI 画的容器**：UI 的白色圆角容器只能给出**矩形**白边，
+套在食物上就是「方框里裁了一块照片」。白边必须**沿着食物轮廓**走，所以只能在像素层做。
+
+**UI 侧同步改**：`StickyNoteCard` / `AiRecognitionPage` 去掉了贴纸外面的白色圆角容器
+（吉祥物占位图仍保留卡片样式），只留一层柔和投影 —— 贴纸因此是「浮在便签上的物体」。
+
+### 15.3 顺带修掉的一个真 bug：推理模型把 token 预算吃光
+
+排查贴纸时顺手发现的，与贴纸无关但更严重：
+
+默认模型 `deepseek-v4.1-flash-1017` 是**推理模型**，网关会在正式答案前先吐一段 `reasoning_content`。
+请求里的 `enable_thinking: false` **只有部分上游节点认**（网关在多个上游之间负载均衡）：
+
+| 上游节点 | `enable_thinking: false` | 正文 |
+|---|---|---|
+| 认的 | reasoning 0 字 | 正常返回（136 token） |
+| 不认的 | reasoning 1700~6500 字 | **正文被截断成空** |
+
+App 之前用 `max_tokens: 512`，撞上不认的上游节点就会**整次识别拿不到正文**，
+用户看到的是「AI 返回了无法解析的结果」。实测同一张图连踩 3 次。
+
+修法（`AiRecognitionService`）：
+- `max_tokens` 从 512 提到 **4096**（覆盖实测最长的 3829 token 推理）；
+- 正文为空时**加大预算重试一次**（8192），仍为空才报错。
+
+### 15.4 验证
+
+- **设备端单测**：`Tests run: 54, Failure: 0, Error: 0, Pass: 54`（原 52 + 新增 2 条贴纸断言）。
+  新增两条：`模切白边_轮廓外一圈是白色纸边`（轮廓上的像素 > 50% 是白色 —— 旧实现这里是 0）、
+  `模切白边_背景确实被抠掉`（透明像素占比 > 12%）。
+- **UI 全量回归** `tools/verify_all.py`：**14/14 PASS**（0 skipped、0 failed）。
+- **黑板专项** `tools/verify_blackboard.py`：**13/13 PASS**（抠图 → 保存入库 → 便签墙 → 自动清理本次记录）。
+- **模拟器实跑**（Mate 90 Pro 模拟器，真实网关请求）：内置示例图 → `鸡胸肉藜麦沙拉 / 430 kcal`
+  → 贴纸按真实轮廓剪出、盘子和桌面被抠掉、沿轮廓有一圈白纸边。
+  证据：`work/sticker-matting-20261021/evidence/`。
+- **算法原型**（Python/numpy，与 ArkTS 实现同构）跑仓库内 6 张真实食物照片对照：
+  `work/sticker-matting-20261021/evidence/compare_old_new_prototype.png`（左原图 / 中旧贴纸 / 右新贴纸）。
+- **抠图耗时**：降采样到 640×478 后，抠图 + 裁剪 + 落盘 + Base64 整条链路 **590 ms**（hilog 实测，
+  原「按多边形直接填」是 87 ms）。慢了约 7 倍，但抠图是**后台**跑的 ——
+  识别结果先显示，贴纸稍后补上，用户不用干等。
+
+### 15.5 已知局限（如实列出）
+
+- **模型给的区域本身不准时，贴纸就不准**。抠图只在模型给的先验附近精修，
+  模型框错了地方，贴纸就跟着错 —— 这一版没有解决「AI 指错位置」的问题。
+- **颜色相近时抠不干净**：白盘子放在白桌上（内置示例图就是这种），
+  颜色模型分不开，贴纸边缘会带上一点盘沿。
+- **全图迭代（GrabCut）没有采用**，因为实测会发散；代价是模型框得离谱时纠不回来。
+- **白色纸边宽度是按画面短边取比例**（3~8 像素），在 74vp 的便签上约 1~2vp，
+  比 nosh 的纸边略细。
+
+---
+
+## 16. 底栏收敛：去掉「营养师」Tab，文字标签只留图标（2026-10-21）
+
+### 16.1 两处改动
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| 底栏 Tab | 今日 / 进度 / **营养师** / 我的（4 个） | 今日 / 进度 / 我的（**3 个**） |
+| 底栏形态 | 图标 + 文字标签（72vp 高） | **只留图标按钮**（52vp 高） |
+
+- **「营养师」Tab 下线**：它本来只是一张 `ComingSoonPage` 占位（服务端对话协议未知、
+  拿不到请求体结构，见 §4），留一个点不动的入口对用户没有价值。
+  `NutriBitesPage.ets` 已删除，`Index.ets` 里的 `TabContent` 一并去掉，
+  后面各 Tab 的索引依次前移（「我的」由 3 变 2，`TabGlyph` 里营养师那个柱状图标分支同步删除）。
+- **底栏只保留图标**：原来图标下面有一行「今日 / 进度 / 营养师 / 我的」文字，
+  现在文字从可见层去掉，底栏高度按图标高度收窄（72 → 52）。
+
+### 16.2 文字去哪了 —— 转成 accessibilityText
+
+文字没有直接丢掉，而是挂到 `accessibilityText` 上：
+
+```ts
+Column() {
+  this.TabGlyph(index)
+}
+.accessibilityText(label)   // 可见层不显示，无障碍朗读仍能报出名字
+```
+
+`SymbolGlyph` 本身没有可读名称，去掉文字后这一项对读屏软件就是「匿名按钮」。
+保留 `accessibilityText` 后朗读仍会说「今日 / 进度 / 我的」。
+
+**但实测 `uitest dumpLayout` 不会把 `accessibilityText` 吐进 `text` 字段** ——
+UI 树里查不到「今日」这三个字了（这与读屏无关，uitest 取的是渲染文本）。
+所以自动化脚本不能再按文本点底栏。
+
+### 16.3 自动化脚本怎么跟着改
+
+`tools/` 下四个脚本原来都靠 `tap('我的')` 这种**按文字**点底栏，全部失效。改成：
+
+- `verify_all.py` 新增 `tab_centers()` + `tap_tab(label)`：
+  从 UI 树里找 `TabBar` 节点，取它下面的**可点击**子项，按从左到右排序，
+  再用 `TAB_ORDER = ['今日', '进度', '我的']` 映射名称 → 序号。
+  **不写死坐标** —— 底栏高度变了、Tab 数量变了都不会点空。
+  实测取到 `[(213,2643), (638,2643), (1065,2643)]`，点「进度」能进进度页、点「今日」能回今日页。
+- `verify_privacy_runtime.py` 是独立实现，补了一份同样的 `tap_tab()`。
+- `home_top()` 原来靠查「今日」两个字判断是否在今日页，改成查今日页特有的「今日摄入」。
+
+### 16.4 验证
+
+- 设备端单测：**54/54 PASS**（本轮未动抠图与解析逻辑）。
+- UI 全量回归 `tools/verify_all.py`：**14/14 PASS**（0 skipped、0 failed）。
+- 黑板专项 `tools/verify_blackboard.py`：**13/13 PASS**。
+- 首启专项 `tools/verify_free_markers.py`：**全部通过**。
+- 模拟器实跑确认：底栏只剩三个图标按钮，无文字；点「进度」能进进度页、点「今日」能回今日页。
+
+顺带修掉 `verify_free_markers.py` 里两条**早于本轮就失效**的断言
+（黑板改版把半环卡迁到进度页后，首页文案从「今日热量」变成了「今日摄入」；
+另一条声明行在结果卡片底部，Scroll 页面只返回已布局的节点，得往下滚再取树）——
+不是本轮改坏的，但既然动了这个脚本就一并修好。
+
+### 16.5 已知取舍（如实列出）
+
+- **纯图标底栏的可发现性变差**：新用户不一定猜得到三个图标分别是什么，
+  没有文字标签时「日历」到底是进度还是日程会有歧义。这是为了视觉简洁做的取舍，
+  如果要折中，可以考虑「选中态才显示文字」。
+- **自动化脚本现在依赖 Tab 的顺序**（今日 → 进度 → 我的）。以后增删 Tab，
+  记得同步改 `TAB_ORDER`，否则脚本会点错项 —— 脚本在数量对不上时会打印
+  `tab X not found (bar has N items)`，不会静默点空。
+
+## 17. 今日黑板改造：自由手帐画布 + 端侧分割 + 模切贴纸合成（2026-10-21）
+
+按用户提供的 nosh 复现设计方案（`nosh_harmonyos_agent_prompt.md`）改造「今日黑板」。
+旧版是一条**只能看、不能摆**的横向便签卡流；这一版把今日页第一屏改成
+**可自由摆放的黑板手帐画布**，并按方案补上端侧主体分割与模切白边合成。
+
+### 17.1 方案 → 实现的对照（含有意偏离）
+
+| 方案要求 | 本项目实现 | 差异原因 |
+| --- | --- | --- |
+| `@kit.CoreVisionKit` 的 `subjectSegmentation` 抠主体 | `services/StickerProcessor.ets` 封装调用，掩膜与模型轮廓**求交**当先验 | 方案写的是 `enableOutputForegroundImage`，SDK 里的真实字段名是 `enableSubjectForegroundImage`；且端侧给的是「画面最显著的主体」，不等于用户问的那份食物，所以不能直接替换模型轮廓 |
+| 模拟器/不支持设备降级 | `init()` 失败即永久降级，返回 `null`，走原来的颜色模型抠图 | 端侧分割依赖 `SystemCapability.AI.Vision.SubjectSegmentation`，模拟器没有 NPU，必然不支持 |
+| OffscreenCanvas 16 向极坐标偏移做白边 | **真实照片**用 `StickerMatting.applyDieCutEdge`（倒角距离变换）；**内置矢量贴纸**用方案的 16 向偏移法 | 16 向偏移得到的是多边形外扩，边是折线、转角处宽度不均；距离变换是沿真实轮廓等距外扩，边宽处处一致。两者不可比时差别很明显。内置贴纸的 alpha 本身就是干净剪影，用 16 向偏移正合适 |
+| 黑板自由画布：拖拽/缩放/旋转/置顶/规整/视图切换/分栏 | 全部实现，见 §17.3 | — |
+| 彩色折角便签、和纸胶带、图钉、心情/和谁吃/碎碎念 | `components/StickyNoteItem.ets` + `components/FoodStickerItem.ets` | — |
+| `bindSheet` 半模态编辑抽屉 | `components/NoteEditorSheet.ets`，用 `bindSheet($$this.sheetOpen, …)` | 贴纸节点的食物字段（名称/热量/宏量）**不在节点上**，改它们要去 food_log，所以这里只改「属于黑板的」心情/碎碎念/纸色/胶带，食物本身给一个「编辑食物」入口跳到既有的餐食编辑页 |
+| `componentSnapshot` 一键生成分享海报 | `components/SharePosterDialog.ets` + `BlackboardView.sharePoster()` | **只做应用内预览 + 存沙箱**，不导出到相册：导出要 `ohos.permission.WRITE_IMAGEVIDEO`，而本项目对隐私披露有严格要求（新增一个「写入相册」要同步改三处披露文本并升版本号）。分享卡是用户自己屏幕上的内容，没有外发的必要 |
+| 节点类型只有 `FOOD_STICKER` / `STICKY_NOTE` | 额外加了 `DEMO_STICKER` | 方案要求首启铺 3 张示例美食贴纸，但示例是**假数据**，写进 `food_log` 会污染「今日摄入」——用户刚装应用就看到吃了 1200 kcal 会以为算错了。示例单独一种类型，不计入热量，录了第一条真实记录后自动让位 |
+| 数据模型 `@Observed class BoardNodeModel` | `models/BoardModels.ets` | 额外加了 `board_node` 表与 `board_setting` 表（V7 迁移） |
+
+### 17.2 数据层：黑板节点不是饮食记录的副本，而是它的「投影」
+
+这是本轮最关键的一个设计决定。
+
+`food_log` 里已经存了食物记录（名称、热量、宏量、贴纸路径）。
+黑板节点**不重复存这些内容**：
+
+- `FOOD_STICKER` 节点只存 `food_id` + 空间状态（位置/缩放/旋转/层级）+ 装饰；
+  展示时从 `food_log` 读内容 —— 改了食物记录，黑板上的贴纸立刻跟着变，
+  不会出现「餐食卡 430 kcal、黑板贴纸还写着 380 kcal」两处不同步。
+- `STICKY_NOTE` / `DEMO_STICKER` 没有对应的 `food_log` 记录，内容存在节点自己身上。
+
+自动物化：某天的 `food_log` 有记录、黑板上却没有对应节点时，
+`BoardRepository.getNodes()` 会自动补一个节点出来（默认位置松散三列 + 抖动）。
+于是「今天记了三餐」就一定在黑板上有三张贴纸，不必用户手动摆；
+已经摆过的节点保留自己的空间状态，不会被重置。
+
+新增表（`database/SchemaV7.ets` + `database/MigrationV6ToV7.ets`，
+`DATABASE_VERSION` 6 → 7）：
+
+- `board_node`：`date / node_type / food_id / 标题与营养字段 / 装饰 / 空间状态`
+- `board_setting`：单行，存底纹主题与视图模式（跨日期的全局设置）
+
+### 17.2.1 本轮新增/改动的文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `models/BoardModels.ets`（新） | `@Observed class BoardNodeModel` + 节点类型/便签纸样式/胶带/主题/视图模式枚举 + `paperColors()` `boardThemeColors()` |
+| `database/SchemaV7.ets`（新） | `board_node` 与 `board_setting` 两张表 |
+| `database/MigrationV6ToV7.ets`（新） | 建表迁移（幂等，新增库与存量库同一条路径） |
+| `repositories/BoardRepository.ets`（新） | 节点读写、空间状态落库、自动物化、复制到指定日期、示例铺设、黑板设置 |
+| `components/BlackboardNodeWrapper.ets`（新） | 手势外壳：平移/缩放/旋转/置顶/单击/双击 |
+| `components/FoodStickerItem.ets`（新） | 模切贴纸（正面 + 翻面背面） |
+| `components/StickyNoteItem.ets`（新） | 彩色折角便签 |
+| `components/NoteEditorSheet.ets`（新） | `bindSheet` 编辑抽屉 |
+| `components/SharePosterDialog.ets`（新） | 分享卡预览 |
+| `services/StickerProcessor.ets`（新） | CoreVisionKit 封装 + 内置矢量贴纸 + 16 向模切白边合成 |
+| `services/StickerMatting.ets`（改） | 新增 `buildPriorWithMask()`：端侧掩膜与模型轮廓求交 |
+| `services/StickerCutoutService.ets`（改） | 抠图链路优先走端侧分割；新增 `ensurePresetSticker()` / `ensurePresetVersion()` |
+| `repositories/FoodRepository.ets`（改） | 新增 `updateMealType()`；删记录时同步删黑板节点 |
+| `database/Database.ets` / `common/Constants.ets`（改） | V7 迁移接入，`DATABASE_VERSION` 6 → 7，清库时清黑板表 |
+| `components/BlackboardView.ets`（重写） | 今日黑板：仪表盘 + 操作排 + 自由画布 / 网格视图 + 抽屉 + 分享卡 |
+| `components/StickyNoteCard.ets`、`common/ChalkTokens.ets`（**删除**） | 旧便签墙组件与其配色，改版后无人引用 |
+| `ohosTest/ets/test/BoardCanvas.test.ets`（新） | 11 条单测 |
+| `tools/verify_board_canvas.py`（新） | 11 项黑板画布专项回归 |
+
+### 17.3 交互实现
+
+- **手势矩阵**（`components/BlackboardNodeWrapper.ets`）：
+  `GestureGroup(GestureMode.Parallel, 单击 / 单指平移 / 双指捏合 / 双指旋转)`。
+  用 `priorityGesture` 而不是 `gesture` —— 今日页整体是纵向 Scroll，
+  普通 `gesture` 会被祖先 Scroll 抢走，贴纸纹丝不动、页面倒是滚起来了。
+  `priorityGesture` 之后「按住贴纸拖 = 挪贴纸，按住空白拖 = 滚页面」。
+- **位置与缩放分层**：位置挂在外层 `.position`（不挂动画，拖拽才跟手），
+  缩放/旋转挂在内层并配 `curves.springMotion`（捏起来有「拿在手里」的回弹感）。
+  位置和缩放都挂动画的话，拖拽会「拖泥带水」甩不掉。
+- **单击 / 双击**：ArkUI 里同时挂 `count:1` 和 `count:2` 的 TapGesture 会打架，
+  所以自己判双击 —— 第一次点击起 280ms 定时器，窗口内再点一次就是双击（翻面），
+  否则定时器到点当作单击（打开编辑抽屉）。
+- **一键规整**：按餐次排成两列，保留 ±2° 手作感角度。
+- **粉笔分栏**：四栏（早/午/晚/加餐）虚线，打开后把贴纸拖进哪一栏，
+  节点餐次**和 `food_log.meal_type` 一起改** —— 否则黑板说「这是午餐」、
+  汇总却算进加餐，两处对不上。改完弹一条 toast 说明归到了哪一餐。
+- **视图切换**：自由画布 ↔ 按餐次分组的结构化网格。
+- **底纹**：深墨绿粉笔黑板 / 暖棕软木 / 米白点阵手帐纸三套。
+
+### 17.4 内置矢量美食贴纸
+
+`StickerProcessor.presetSticker()` 用 OffscreenCanvas 画生煎包、牛油果滑蛋吐司、冰美式，
+再按方案的 16 向偏移法烘一圈白色模切边，存成 `stickers/preset_<kind>.png`。
+
+**贴纸文件只存一份**，节点里只存相对路径，显示时再转 data URI ——
+现画要跑 3 次离屏合成（开板子时白等几百毫秒），现画还要把 base64 塞进数据库。
+
+画法改了怎么办？靠 `PRESET_VERSION` 失效：版本对不上就把旧 PNG 删掉重画，
+于是**已经铺在板子上的示例也会更新成新画法**，不用动数据库。
+
+### 17.5 踩坑记录（本轮新增，务必留档）
+
+1. **增量构建会跳过 ArkTS 编译，「BUILD SUCCESSFUL」是假阳性。**
+   连续两次 `assembleHap` 都报成功、但装到设备上的包没有新代码，
+   排查了两轮才发现 `CompileArkTS` 任务是 UP-TO-DATE。
+   **现在每次出包前都 `hvigorw clean` 再 build，并确认日志里出现
+   `Finished :entry:default@CompileArkTS`（带耗时），否则不算编译过。**
+2. **ArkUI 的 2D 上下文不保证实现 `ellipse()` / `roundRect()`**（d.ts 里有，运行时可能没有）。
+   椭圆改成 48 段折线逼近，圆角矩形改成 `moveTo/arc` 手搓。
+3. **ArkUI 的 canvas 路径是在「填充时」才套当前变换的**，
+   而且 `beginPath()` 不能省 —— 省了路径会跨次累积，
+   上一轮（在别的变换下加的）点会被二次变换甩到别处。
+   实测牛油果吐司的第三片牛油果飞到了吐司外面、还带着模切白边。
+4. **`@Builder` 里不能写语句**（`const` / `let` 都不行，报 `10905209`），
+   而且 **@Builder 的返回值是 void，不能链式写 `.margin()` / `.position()`**，
+   必须包一层容器。组件的 `build()` 同样只能是 UI 语法。
+5. **`fileIo.read()` 返回的是字节数（number），不是 `{bytesRead, buffer}`**；
+   **`fileIo.write()` 只收 `ArrayBuffer` 或 `string`，不收 `Uint8Array`**。
+6. **`board_node.created_at` 是 NOT NULL 且没有默认值** ——
+   插入时漏带这一列，SQLite 只报一句 `constraint violation`，
+   看不出是哪一列，四个示例节点全军覆没才定位到。
+7. **贴纸 PNG 是缓存**：改了画法但文件名不变，板子上还是老样子。
+   用版本文件失效（见 §17.4），别靠改文件名 —— 改文件名会让库里已存的路径指向不存在的文件。
+8. **`accessibilityText` 不进 `uitest dumpLayout`**（上一轮已记，这里再确认一次）：
+   自动化脚本只能按 Tab 顺序定位。
+9. **脚本里写死服务方域名的断言会过期**：
+   `verify_privacy_runtime.py` 断言「上传确认弹窗里出现
+   `https://dashscope.aliyuncs.com/compatible-mode/v1`」——
+   那是**上一轮把默认服务方切到 OpenCSG 之前**写的。
+   弹窗显示的是**当前配置的服务地址**，断言改成两个域名都认。
+   顺带修掉两个脚本里的同类问题：
+   `tap_tab()` 找不到底栏时先按返回键退回主界面
+   （App 冷启动会**恢复上次的路由栈**，停在二级页时根本没有底栏）。
+
+### 17.6 验证结果
+
+- **设备端单测：65/65 PASS**（原有 54 条 + 新增 `entry/src/ohosTest/ets/test/BoardCanvas.test.ets` 11 条）。
+  新增的 11 条覆盖：掩膜求交的三种分支（一致取交集 / 完全不符退回 / 掩膜全空退回）、
+  端侧分割不可用时返回 `null` 而不是抛异常、节点落库读回、复制到指定日期、
+  内置贴纸的**像素级**断言（内容非空、四角透明、存在紧贴轮廓的白色纸边）。
+- **UI 全量回归 `tools/verify_all.py`：14/14 PASS**（0 skipped、0 failed）。
+- **黑板画布专项 `tools/verify_board_canvas.py`（本轮新增）：11/11 PASS**。
+  逐项对着可观测状态判定：操作排渲染、画布上有贴纸、**贴纸被拖动后位置真的变了**、
+  网格视图按餐次分组、底纹切换（板面众数色 (107,128,111) → (176,133,99) → (208,207,205)）、
+  一键规整后位置改变、粉笔分栏的餐次标题出现、分享卡弹窗出现、点贴纸打开编辑抽屉。
+- **黑板专项 `tools/verify_blackboard.py`：15/15 PASS**（抠图 → 保存 → 黑板整条链路；
+  本轮新增「黑板操作排渲染」与「贴纸可以被拖动」两项）。
+- **首启专项 `tools/verify_free_markers.py`：全部通过**（首启同意 → 六步引导 →
+  演示模式标注 → AI 生成声明行）。
+- **隐私运行时 `tools/verify_privacy_runtime.py`：全部通过**（凭证安全存储与重启后回读、
+  实时上传前的即时告知弹窗、取消后不出结果、删除数据并撤销同意后回到首启同意页）。
+
+> ⚠ 回归脚本要用**系统 Python** 跑：`/usr/bin/python3`。
+> PATH 上的 homebrew python 没有 Pillow，轮播像素差分那条会直接抛
+> `No module named 'PIL'`（`verify_all.py` 里 `PIL` 是函数内 import，
+> 缺了不会在启动时报错，只会在跑到那一条时炸）。
+
+模拟器实跑确认（截图在 `work/board-canvas-20261021/evidence/` 与 `tools/shots/`）：
+
+- 黑板第一屏：日期胶囊条 + 摄入仪表 + 操作排 + 自由画布（3 张内置矢量美食贴纸 + 1 张心情便签），
+  底部是卡通猫与粉笔槽。
+- 拖拽贴纸后位置持久化（杀进程重开仍在原位）。
+- 双击贴纸翻到背面：三大营养素克数 + AI 饭搭子点评 + 碎碎念。
+- 底纹三套：墨绿粉笔黑板 / 暖棕软木 / 米白点阵手帐纸。
+- 分享卡：用 `componentSnapshot` 截出的画布快照，弹窗预览 + 存沙箱。
+
+### 17.6.1 本轮连带修掉的三个真问题
+
+1. **拖完贴纸，编辑抽屉会自己弹出来。**
+   ArkUI 的手势竞技场里，PanGesture 先识别成功之后，
+   同一次按压仍可能补发一次 TapGesture —— 于是「拖走贴纸」顺手把抽屉也打开了，
+   整个黑板被浮层挡住。
+   修法：记录最近一次拖拽的时间，400ms 内的点击一律当作拖拽尾巴忽略。
+2. **深色模式下编辑抽屉的输入框是「白底白字」，完全看不见。**
+   `TextInput` 的默认字色跟随系统深浅色（深色模式是白），
+   而抽屉底色是写死的米黄 `#FFF8E7` —— 白字写在米黄上等于隐形。
+   修法：所有输入框显式给 `fontColor` 与 `placeholderColor`。
+3. **黑板占满首屏后，右下角悬浮「+」按钮压住了「今日餐食」标题右侧的拍照入口。**
+   点那个入口会先命中 FAB、跳到「记录饮食」页 —— 自动化连着踩了三次。
+   修法：黑板操作排里新增常驻的**「拍照」入口**（主色，一拍即贴的主入口），
+   脚本与用户都改点它；「今日餐食」里那个入口保留但不再是唯一路径。
+
+### 17.7 已知取舍与未验证项（如实列出）
+
+- **端侧分割只在真机上才可能生效**：模拟器没有 NPU，
+  `subjectSegmentation.init()` 直接失败。本轮**没有在支持该能力的真机上验证过**
+  端侧掩膜与模型轮廓求交的实际效果，只验证了「不支持时干净降级、不抛异常」。
+  真机上的收益（轮廓更准）待实测。
+- **分享卡不导出到相册**，理由见 §17.1；如需导出要加权限并改三处隐私披露。
+- **粉笔分栏会改写 `food_log` 的餐次**，这是方案明确要求的行为（拖进哪一栏就归哪一餐），
+  但属于「手势隐式改了数据」，已用 toast 明示归入的餐次。
+- **自由画布的节点是绝对坐标**（vp，相对板面左上角），
+  换机型板面宽度不同会把贴纸挤到边上；渲染时做了一次夹取兜底，
+  但不会改库里的值 —— 换回宽屏时贴纸会回到原位。
+- **旋转/缩放的吸附**：方案提到「拖拽磁吸」，本轮只做了边界夹取，没做网格吸附。

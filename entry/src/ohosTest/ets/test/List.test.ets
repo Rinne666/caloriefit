@@ -4,6 +4,7 @@ import bodyDataTest from './BodyData.test';
 import foodRegionTest from './FoodRegion.test';
 import canvasCutoutTest from './CanvasCutout.test';
 import foodBatchTest from './FoodBatch.test';
+import boardCanvasTest from './BoardCanvas.test';
 
 export default function testsuite() {
   stepBaselineTest();
@@ -12,4 +13,5 @@ export default function testsuite() {
   foodRegionTest();
   canvasCutoutTest();
   foodBatchTest();
+  boardCanvasTest();
 }

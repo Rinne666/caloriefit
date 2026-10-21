@@ -88,10 +88,12 @@ check('进入引导首屏', has('你想达成什么', tl) or has('目标', tl), 
 if not V.complete_onboarding_for_test():
     check('引导完成', False, 'complete_onboarding_for_test 返回 False')
 else:
-    check('引导完成并进入今日页', has('今日热量', texts()))
+    # 今日页的判据：黑板改版后首页的卡片文案是「今日摄入」（旧的「今日热量半环卡」
+    # 已迁到进度页顶部，首页不再有「今日热量」三个字 —— 断言要跟当前文案走）。
+    check('引导完成并进入今日页', has('今日摄入', texts()))
 
 print('=== 3. AI 演示模式 → 结果卡显性标识 ===')
-V.tap('我的', settle=2.5)
+V.tap_tab('我的', settle=2.5)
 V.scroll_top()
 ok = V.find_and_tap('AI 食物识别设置', max_scroll=20, settle=3.0)
 check('进入 AI 设置页', ok)
@@ -103,15 +105,28 @@ if ok:
         V.sh('shell', 'uitest', 'uiInput', 'click', str(p[0]), str(p[1]))
         time.sleep(1.2)
     V.back()
-    V.tap('今日', settle=2.5)
+    V.tap_tab('今日', settle=2.5)
     V.scroll_top()
-    V.tap('拍照识别食物', settle=3.0)
+    # 2026-10-21：黑板占满首屏后，「今日餐食」标题右侧的拍照入口落在
+    # 右下角悬浮「+」按钮下方，点它会先命中 FAB、根本进不了识别页。
+    # 改点黑板操作排里的常驻「拍照」入口。
+    V.tap('拍照', settle=3.0)
     # 必须先选示例图，否则「开始 AI 识别」点的是空状态，停在选图页出不来结果
     V.tap('示例图', settle=2.5)
     V.tap('开始 AI 识别', settle=8.0)
     tl = texts()
     check('出现「AI 生成估算」显性标识', has('AI 生成估算', tl), str(tl[:6]))
-    check('出现 AI 生成声明行', has('均为 AI 生成', tl))
+    # 「演示模式」横幅在结果卡片的**顶部**，用滚动前的树判定
+    check('演示模式标注仍在', has('演示模式', tl))
+    # 声明行在结果卡片的**底部**。Scroll 页面只返回**已布局**的节点，
+    # 视口外的内容不在树里 —— 必须往下滚一段再取树（§5 踩过的坑）。
+    tl_bottom = tl
+    if not has('均为 AI 生成', tl):
+        for _ in range(3):
+            V.sh('shell', 'uitest', 'uiInput', 'swipe', '640', '1900', '640', '1100', str(V.SWIPE_VELOCITY))
+            time.sleep(0.6)
+        tl_bottom = texts()
+    check('出现 AI 生成声明行', has('均为 AI 生成', tl_bottom))
     check('演示模式标注仍在', has('演示模式', tl))
     V.shot('v_free_ai_marker')
 

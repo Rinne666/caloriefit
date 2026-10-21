@@ -1,14 +1,23 @@
 /**
  * 唯一 @Entry 页面：初始化数据库、持有全局状态（日期/刷新版本号），
- * Navigation 容器内放五个 Tab，编辑页通过 NavPathStack 打开 NavDestination。
+ * Navigation 容器内放三个 Tab，编辑页通过 NavPathStack 打开 NavDestination。
  *
  * 底 Tab 结构对齐 NutriScan 实测路由图：
  *   今日（热量记录 + 今日黑板，个人记录）
  *   2026-10-20：原「膳食」Tab 与今日下的「饮水/断食」子页已下线，
  *   底部收敛为 今日 / 进度 / 营养师 / 我的 四个 Tab。
  *   进度（今天/本周/近30天 + Readiness/NutriScore）
- *   营养师（AI 对话，未实现跳转）
+ *   2026-10-21：原「营养师」Tab 已下线（功能未实现，只是 ComingSoon 占位；
+ *   服务端对话协议未知，保留一个点不动的入口对用户没有价值），
+ *   底部收敛为 今日 / 进度 / 我的 三个 Tab。
  *   我的
+ *
+ * 2026-10-21：底栏**只保留图标按钮**，文字标签已去掉。
+ *   文字没有消失，而是转成 `accessibilityText` —— 可见层不再显示，
+ *   但读屏软件仍会念出「今日 / 进度 / 我的」。
+ *   注意：`uitest dumpLayout` 取的是**渲染文本**，不会把 accessibilityText
+ *   吐进 text 字段，所以自动化脚本按文字点底栏已失效，改用树里的可点击子项定位
+ *   （见 tools/verify_all.py 的 tap_tab）。
  *
  * 路由覆盖原则：**任何一个入口都不能是死路**。
  * 凡是做了的路由指到实页，没做的指到 ComingSoon 占位，
@@ -20,7 +29,6 @@ import { SettingsRepository } from '../repositories/SettingsRepository';
 import { AppSettings } from '../models/AppSettings';
 import { HomeTabs } from './HomeTabs';
 import { ProgressPage } from './ProgressPage';
-import { NutriBitesPage } from './NutriBitesPage';
 import { ProfilePage } from './ProfilePage';
 import { FoodPage } from './FoodPage';
 import { ActivityPage } from './ActivityPage';
@@ -173,27 +181,6 @@ struct Index {
           .fontColor([this.tabTint(index)])
       }
     } else if (index === 2) {
-      Row({ space: 3 }) {
-        Column()
-          .width(4)
-          .height(8)
-          .backgroundColor(this.tabTint(index))
-          .borderRadius(2)
-        Column()
-          .width(4)
-          .height(14)
-          .backgroundColor(this.tabTint(index))
-          .borderRadius(2)
-        Column()
-          .width(4)
-          .height(21)
-          .backgroundColor(this.tabTint(index))
-          .borderRadius(2)
-      }
-      .width(24)
-      .height(24)
-      .alignItems(VerticalAlign.Bottom)
-    } else if (index === 3) {
       Stack({ alignContent: Alignment.Center }) {
         Circle()
           .width(21)
@@ -231,21 +218,23 @@ struct Index {
     }
   }
 
-  /** 五项等宽底栏，标签、单色图标和深色表面按 NutriScan 截图还原。 */
+  /**
+   * 底栏项：**只保留图标按钮**。
+   *
+   * 原来图标下面有一行文字标签（今日 / 进度 / 营养师 / 我的），
+   * 按产品要求已从可见层去掉 —— 文字改挂到 `accessibilityText`，
+   * 读屏软件仍能念出名字，不至于变成「三个 anonymous 按钮」。
+   */
   @Builder
   TabItem(label: string, index: number) {
-    Column({ space: 4 }) {
+    Column() {
       this.TabGlyph(index)
-      Text(label)
-        .fontSize(13)
-        .fontWeight(this.selectedBottomTab === index ? FontWeight.Medium : FontWeight.Regular)
-        .fontColor(this.tabTint(index))
-        .maxLines(1)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .backgroundColor(color.surface)
+    .accessibilityText(label)
   }
 
   build() {
@@ -285,17 +274,15 @@ struct Index {
             }
             .tabBar(this.TabItem('进度', 1))
 
-            TabContent() {
-              NutriBitesPage()
-            }
-            .tabBar(this.TabItem('营养师', 2))
-
+            // 2026-10-21：原「营养师」Tab 已下线（功能未实现，只是 ComingSoon 占位）。
+            // 索引再次前移，「我的」由 3 变成 2。
             TabContent() {
               ProfilePage()
             }
-            .tabBar(this.TabItem('我的', 3))
+            .tabBar(this.TabItem('我的', 2))
           }
-          .barHeight(72)
+          // 只剩图标后，底栏高度按图标高度收窄（原来 72 是「图标 + 文字」两行）。
+          .barHeight(52)
           .onChange((index: number) => {
             this.selectedBottomTab = index;
           })

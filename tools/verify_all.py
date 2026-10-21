@@ -70,7 +70,12 @@ def connected():
         return False
 
 
-def dump(retries=5):
+def fetch_tree(retries=5):
+    """取回 UI 树的原始 JSON（含所有节点，不做 text 过滤）。
+
+    底栏只留图标后，Tab 本身没有文字可查，只能靠 TabBar 下的可点击子项定位，
+    所以需要能看到「没有 text 但可点击」的节点。
+    """
     last = None
     for _ in range(retries):
         # 屏幕熄灭时 dumpLayout 会报 "Get window nodes failed"，
@@ -96,23 +101,51 @@ def dump(retries=5):
             last = e
             time.sleep(1.2)
             continue
-        out = []
-
-        def walk(n):
-            if not isinstance(n, dict):
-                return
-            a = n.get('attributes') or {}
-            # 空输入框的 text 是空串，会被 `if a.get('text')` 滤掉 —— 但填写
-            # 表单时正需要按位置找到空框，所以 TextInput 一律收进来。
-            if a.get('text') or a.get('type') == 'TextInput':
-                out.append({'text': a['text'], 'bounds': a.get('bounds', ''),
-                            'type': a.get('type', '')})
-            for c in (n.get('children') or []):
-                walk(c)
-
-        walk(data)
-        return out
+        return data
     raise RuntimeError(f'dumpLayout failed: {last}')
+
+
+def dump(retries=5):
+    """只返回**有文字**的节点（外加空 TextInput，填表要用）。"""
+    data = fetch_tree(retries)
+    out = []
+
+    def walk(n):
+        if not isinstance(n, dict):
+            return
+        a = n.get('attributes') or {}
+        # 空输入框的 text 是空串，会被 `if a.get('text')` 滤掉 —— 但填写
+        # 表单时正需要按位置找到空框，所以 TextInput 一律收进来。
+        if a.get('text') or a.get('type') == 'TextInput':
+            out.append({'text': a['text'], 'bounds': a.get('bounds', ''),
+                        'type': a.get('type', '')})
+        for c in (n.get('children') or []):
+            walk(c)
+
+    walk(data)
+    return out
+
+
+def dump_all(retries=5):
+    """返回 UI 树里的**全部**节点（连空 text 的也要）。
+
+    底栏只留图标后，Tab 本身没有文字可查，只能靠 TabBar 下的可点击子项定位，
+    所以需要能看到「没有 text 但可点击」的节点。
+    """
+    data = fetch_tree(retries)
+    out = []
+
+    def walk(n):
+        if not isinstance(n, dict):
+            return
+        a = n.get('attributes') or {}
+        out.append({'type': a.get('type', ''), 'bounds': a.get('bounds', ''),
+                    'clickable': a.get('clickable', ''), 'text': a.get('text', '')})
+        for c in (n.get('children') or []):
+            walk(c)
+
+    walk(data)
+    return out
 
 
 def center(bounds):
@@ -147,6 +180,65 @@ def back():
     time.sleep(2.0)
 
 
+# 底栏 Tab 与名称的顺序对应。
+# 2026-10-21 起底栏**只保留图标按钮**，文字标签已从可见层去掉 ——
+# UI 树里再也查不到「今日/进度/我的」这几个字，按文本点的老写法全部失效。
+TAB_ORDER = ['今日', '进度', '我的']
+
+
+def _bounds(bounds):
+    n = [int(x) for x in re.findall(r'\d+', bounds or '')]
+    return (n[0], n[1], n[2], n[3]) if len(n) >= 4 else (0, 0, 0, 0)
+
+
+def tab_centers():
+    """底栏各 Tab 的中心坐标（按从左到右）。
+
+    底栏没有文字可查，只能取 TabBar 下的**可点击**子项 ——
+    比写死坐标稳：底栏高度变了、Tab 数量变了都不会点空。
+    """
+    nodes = dump_all()
+    bar = next((n for n in nodes if n['type'] == 'TabBar'), None)
+    if bar is None:
+        return []
+    bx0, by0, bx1, by1 = _bounds(bar['bounds'])
+    if bx1 <= bx0:
+        return []
+    pts = []
+    for n in nodes:
+        if n['clickable'] != 'true':
+            continue
+        x0, y0, x1, y1 = _bounds(n['bounds'])
+        if x0 >= bx0 and x1 <= bx1 and y0 >= by0 and y1 <= by1:
+            pts.append(((x0 + x1) // 2, (y0 + y1) // 2))
+    return sorted(set(pts))
+
+
+def tap_tab(label, settle=2.2):
+    """按名称点底栏 Tab。名字只用来查顺序，坐标从 UI 树实测。"""
+    pts = tab_centers()
+    if len(pts) == 0:
+        # App 冷启动会恢复上次的路由栈，停在二级页时根本没有底栏。
+        # 先退回主界面再找，别直接判失败。
+        for _ in range(6):
+            back()
+            time.sleep(1.2)
+            pts = tab_centers()
+            if len(pts) > 0:
+                break
+    if label not in TAB_ORDER:
+        print(f'unknown tab: {label}')
+        return False
+    idx = TAB_ORDER.index(label)
+    if idx >= len(pts):
+        print(f'tab {label} not found (bar has {len(pts)} items)')
+        return False
+    x, y = pts[idx]
+    sh('shell', 'uitest', 'uiInput', 'click', str(x), str(y))
+    time.sleep(settle)
+    return True
+
+
 def scroll_top(times=8):
     """把页面滚回顶部。
 
@@ -164,14 +256,21 @@ def scroll_top(times=8):
 
 
 def home_top():
-    """返回今日首页并把纵向列表复位，避免复用旧滚动位置。"""
+    """返回今日首页并把纵向列表复位，避免复用旧滚动位置。
+
+    底栏只有图标、没有文字，所以「当前在不在今日页」不能再靠查「今日」两个字，
+    改成查今日页特有的文案（今日摄入）。
+    """
     for _ in range(4):
         nodes = dump()
-        if any(n['text'] == '今日' for n in nodes):
-            if not tap('今日', settle=2.5):
-                return False
+        if has(nodes, '今日摄入'):
             scroll_top()
-            return has(dump(), '今日摄入')
+            return True
+        if not tap_tab('今日', settle=2.5):
+            return False
+        scroll_top()
+        if has(dump(), '今日摄入'):
+            return True
         back()
     return False
 
@@ -203,7 +302,7 @@ def read_toggles():
 
 def enable_demo_mode():
     """在本次验证会话开启本地 AI 模拟，避免把示例图发往已配置服务。"""
-    if not tap('我的', settle=2.5):
+    if not tap_tab('我的', settle=2.5):
         return False
     scroll_top()
     if not find_and_tap('AI 食物识别设置', max_scroll=20, settle=3.0):
@@ -222,7 +321,7 @@ def enable_demo_mode():
         if len(toggles) < 2 or toggles[1]['checked'] != 'true':
             return False
     back()
-    if not tap('今日', settle=2.5):
+    if not tap_tab('今日', settle=2.5):
         return False
     scroll_top()
     return has(dump(), '今日摄入')
@@ -349,7 +448,7 @@ def complete_onboarding_for_test():
         return False
 
     # 引导应当把用户填的体征写进档案，且**不出现旧版伪造的默认值**。
-    if not tap('我的', settle=2.5):
+    if not tap_tab('我的', settle=2.5):
         return False
     scroll_top()
     profile_nodes = dump()
@@ -361,7 +460,7 @@ def complete_onboarding_for_test():
         print(f'    引导填写的体征未落到档案：{entered}')
         return False
     print(f'    PASS  引导填写的体征已落到档案：{body_values}')
-    if not tap('今日', settle=2.5):
+    if not tap_tab('今日', settle=2.5):
         return False
     scroll_top()
     return has(dump(), '今日摄入')
@@ -445,7 +544,10 @@ def c_date_strip():
 def c_ai_entry():
     if not home_top():
         return False, '无法回到今日首页顶部'
-    ok = tap('拍照识别食物', settle=4.0)
+    # 2026-10-21：黑板占满首屏后，「今日餐食」标题右侧的拍照入口
+    # 正好落在右下角悬浮「+」按钮的下方 —— 点它会先命中 FAB、跳到记��页。
+    # 所以这里改点黑板操作排里的常驻「拍照」入口（一拍即贴的主入口）。
+    ok = tap('拍照', settle=4.0)
     return ok and has(dump(), 'AI 食物识别'), 'AI 入口进入识别页'
 
 
@@ -454,7 +556,10 @@ def c_meal_cards():
         return False, '无法回到今日首页顶部'
     # 早餐卡片通常在首屏以下；HomePage 的 Scroll 只把可见项挂进 UI 树，
     # 所以先滚动到它出现，再按可见 bounds 点击。
-    ok = find_and_tap('早餐', max_scroll=12, settle=4.0)
+    # 2026-10-21：黑板上的示例贴纸也写着「早餐/午餐/晚餐」，
+    # 按「早餐」找会命中黑板而不是餐食卡片 ——
+    # 改用餐食卡片独有的 emoji 定位（黑板上没有这个符号）。
+    ok = find_and_tap('🍳', max_scroll=12, settle=4.0)
     return ok and has(dump(), '餐食详情'), '早餐卡片进入餐食详情'
 
 
@@ -519,7 +624,9 @@ def c_carousel():
 
     before = Image.open(io.BytesIO(_shot_bytes())).convert('RGB')
 
-    sh('shell', 'uitest', 'uiInput', 'swipe', '1000', str(y), '200', str(y), str(CAROUSEL_VELOCITY))
+    # 起点选 700 而不是 1000：轮播条在首屏底部时，
+    # 右边正好压着右下角的悬浮「+」按钮，从那里起手会变成点 FAB。
+    sh('shell', 'uitest', 'uiInput', 'swipe', '700', str(y), '200', str(y), str(CAROUSEL_VELOCITY))
     time.sleep(1.8)
 
     after = Image.open(io.BytesIO(_shot_bytes())).convert('RGB')
@@ -550,7 +657,10 @@ def c_carousel():
 def c_sample_ai():
     if not home_top():
         return False, '无法回到今日首页顶部'
-    if not tap('拍照识别食物', settle=4.0):
+    # 点黑板操作排里的「拍照」入口：
+    # 「今日餐食」标题右侧那个拍照入口正好落在右下角悬浮「+」按钮下方，
+    # 点它会先命中 FAB、跳到记录页。
+    if not tap('拍照', settle=4.0):
         return False, 'AI 入口无法打开'
     ok = tap('没有照片？用内置示例图试一下', settle=3.5)
     nodes = dump()
@@ -560,7 +670,7 @@ def c_sample_ai():
 def c_foodlog():
     if not home_top():
         return False, '无法回到今日首页顶部'
-    tap('我的', settle=3.0)
+    tap_tab('我的', settle=3.0)
     scroll_top()
     ok = find_and_tap('全部餐食', settle=3.0)
     nodes = dump()
@@ -597,7 +707,7 @@ def ensure_today_tab():
         nodes = dump()
         if has(nodes, '今日摄入'):
             return True
-        if any(n['text'] == '今日' for n in nodes) and tap('今日', settle=2.5):
+        if tap_tab('今日', settle=2.5):
             scroll_top()
             if has(dump(), '今日摄入'):
                 return True
@@ -611,7 +721,7 @@ def c_privacy_collected_inventory():
     工信部 292 号文要求双清单在二级菜单展示，应用市场把它列为上架要求。
     入口若被后续改动删掉，审核会被直接驳回，所以固化成回归项。
     """
-    if not tap('我的', settle=3.0):
+    if not tap_tab('我的', settle=3.0):
         return False, '无法进入我的页'
     scroll_top()
     ok = find_and_tap('已收集个人信息清单', max_scroll=25, settle=3.0)
@@ -626,14 +736,16 @@ def c_privacy_collected_inventory():
 
 def c_privacy_shared_inventory():
     """个人信息保护「第三方共享个人信息清单」必须可达且写明接收方。"""
-    if not tap('我的', settle=3.0):
+    if not tap_tab('我的', settle=3.0):
         return False, '无法进入我的页'
     scroll_top()
     ok = find_and_tap('第三方共享个人信息清单', max_scroll=25, settle=3.0)
     if not ok:
         return False, '「第三方共享个人信息清单」入口不可达'
     nodes = dump()
-    required = ('第三方共享个人信息清单', '阿里云百炼', '接收方', '使用目的', '共享方式')
+    # 接收方必须同时写出默认服务方（OpenCSG）与备用服务方（百炼），
+    # 否则清单与实际默认配置对不上，属于披露不实。
+    required = ('第三方共享个人信息清单', 'OpenCSG', '阿里云百炼', '接收方', '使用目的', '共享方式')
     if not all(has(nodes, t) for t in required):
         return False, '共享清单页缺少接收方或共享方式'
     return True, '入口可达，共享项写明接收方与共享方式'
@@ -641,7 +753,7 @@ def c_privacy_shared_inventory():
 
 def c_privacy_policy():
     """隐私政策正文必须含免责条款与待补齐提示。"""
-    if not tap('我的', settle=3.0):
+    if not tap_tab('我的', settle=3.0):
         return False, '无法进入我的页'
     scroll_top()
     ok = find_and_tap('查看隐私政策', max_scroll=25, settle=3.0)
@@ -677,7 +789,7 @@ def c_account_login():
     所以这里只验**入口与状态机**：入口能进、页面渲染、且要么明确提示
     client_id 未配置，要么给出登录界面（协议勾选 + 官方按钮）。
     """
-    if not tap('我的', settle=3.0):
+    if not tap_tab('我的', settle=3.0):
         return False, '无法进入我的页'
     scroll_top()
     ok = find_and_tap('华为账号', max_scroll=25, settle=3.0)

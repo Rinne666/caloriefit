@@ -24,7 +24,9 @@ export class AiHttpClient {
         method: http.RequestMethod.POST,
         header: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${apiKey}`,
+          // 网关默认会压缩响应体；显式声明 identity，避免拿到压缩字节流。
+          'Accept-Encoding': 'identity'
         } as Record<string, string>,
         extraData: body,
         expectDataType: http.HttpDataType.STRING,
@@ -43,12 +45,17 @@ export class AiHttpClient {
         throw new AiError(AiErrorCode.FORBIDDEN);
       }
       if (status === 429) {
+        // 网关的容量类错误（capacity_exceeded / tpm_exceeded）也走 429。
         throw new AiError(AiErrorCode.RATE_LIMITED);
       }
       if (status >= 500) {
         throw new AiError(AiErrorCode.SERVER_ERROR);
       }
-      // 百炼部分额度类错误以 4xx 返回，结合响应体错误码识别
+      if (status === 400) {
+        // 模型名不存在、请求体不被接受等，多半是配置问题。
+        throw new AiError(AiErrorCode.INVALID_CONFIG, `http ${status}`);
+      }
+      // 部分服务方的额度类错误以 4xx 返回，结合响应体错误码识别
       if (text.indexOf('Arrearage') >= 0 || text.indexOf('quota') >= 0 ||
         text.indexOf('AllocationQuota') >= 0) {
         throw new AiError(AiErrorCode.QUOTA_EXCEEDED);

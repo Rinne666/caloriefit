@@ -132,13 +132,37 @@ export class FoodRepository {
     const predicates = new relationalStore.RdbPredicates(TABLE);
     predicates.equalTo('id', id);
     await store.delete(predicates);
+    // 黑板上的贴纸节点是这条记录的投影，记录没了节点也要没。
+    // 这里用裸 SQL 而不是 import BoardRepository —— BoardRepository 要读
+    // FoodRepository（贴纸节点的内容从 food_log 取），再互相 import 就成环了。
+    try {
+      await store.executeSql('DELETE FROM board_node WHERE food_id = ?', [id]);
+    } catch (_e) {
+      // 表还没建（V7 之前的老库）时忽略，不影响删除记录本身
+    }
     if (existing !== null && existing.stickerPath !== null) {
       await StickerCutoutService.remove(existing.stickerPath);
     }
   }
 
-  static async getById(id: number): Promise<FoodLog | null> {
+  /**
+   * 只改餐次（黑板分栏拖拽时用）。
+   *
+   * 贴纸落在哪个餐次分区，餐次就跟着变 —— 否则黑板说「这是午餐」、
+   * 汇总却把它算进加餐，两处对不上。
+   */
+  static async updateMealType(id: number, mealType: number): Promise<void> {
     const store = await Database.ensure();
+    const bucket: relationalStore.ValuesBucket = {
+      'meal_type': mealType,
+      'updated_at': Date.now()
+    };
+    const predicates = new relationalStore.RdbPredicates(TABLE);
+    predicates.equalTo('id', id);
+    await store.update(bucket, predicates);
+  }
+
+  static async getById(id: number): Promise<FoodLog | null> {    const store = await Database.ensure();
     const predicates = new relationalStore.RdbPredicates(TABLE);
     predicates.equalTo('id', id);
     const resultSet = await store.query(predicates);

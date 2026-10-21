@@ -9,15 +9,28 @@ import { AiConfig } from '../models/AiConfig';
 import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { AiDefaults } from '../common/AiConstants';
 
-/** Base URL 校验：仅允许 HTTPS 且 host 属于百炼域名 */
+/**
+ * Base URL 校验：仅允许 HTTPS 且 host 属于隐私政策已声明的服务方域名。
+ * opencsg.com —— OpenCSG 模型网关（默认，OpenAI 兼容）
+ * dashscope.aliyuncs.com / *.maas.aliyuncs.com —— 阿里云百炼（备用）
+ * 放开白名单等于把 App 变成任意地址的通用客户端，属于产品与合规决策，不在此处擅自放开。
+ */
+const ALLOWED_BASE_URL_HOSTS: string[] = [
+  'opencsg.com',
+  'dashscope.aliyuncs.com',
+  'maas.aliyuncs.com'
+];
+
 function validateBaseUrl(input: string): boolean {
   const trimmed = input.trim();
   if (!trimmed.startsWith('https://')) {
     return false;
   }
   try {
-    const host = trimmed.replace('https://', '').split('/')[0].split(':')[0];
-    return host === 'dashscope.aliyuncs.com' || host.endsWith('.maas.aliyuncs.com');
+    const host = trimmed.replace('https://', '').split('/')[0].split(':')[0].toLowerCase();
+    return ALLOWED_BASE_URL_HOSTS.some((allowed: string) => {
+      return host === allowed || host.endsWith(`.${allowed}`);
+    });
   } catch (e) {
     return false;
   }
@@ -59,7 +72,7 @@ export struct AiSettingsPage {
       return;
     }
     if (!validateBaseUrl(baseUrl)) {
-      AppDialogService.toast('Base URL 必须是 https 且属于百炼域名');
+      AppDialogService.toast('Base URL 必须是 https 且属于已声明的服务方域名');
       return;
     }
     try {
@@ -156,7 +169,7 @@ export struct AiSettingsPage {
               Text('模型名称')
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
-              TextInput({ text: this.modelInput, placeholder: '例如 qwen3-vl-plus' })
+              TextInput({ text: this.modelInput, placeholder: '例如 deepseek-v4.1-flash-1017' })
                 .height(layout.inputHeight)
                 .fontSize(fontSize.body)
                 .backgroundColor(color.surfaceMuted)
@@ -189,7 +202,7 @@ export struct AiSettingsPage {
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
               Row({ space: space.sm }) {
-                TextInput({ text: this.keyInput, placeholder: 'sk-…' })
+                TextInput({ text: this.keyInput, placeholder: 'gk-… / sk-…' })
                   .type(InputType.Password)
                   .showPasswordIcon(this.showKey)
                   .height(layout.inputHeight)

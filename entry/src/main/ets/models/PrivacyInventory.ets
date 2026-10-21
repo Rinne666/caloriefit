@@ -142,7 +142,7 @@ export const COLLECTED_INFO_LIST: CollectedInfoItem[] = [
 export const SHARED_INFO_LIST: SharedInfoItem[] = [
   new SharedInfoItem(
     '食物照片（经缩放与压缩后的图像，不含相册其它内容）',
-    '阿里云百炼（DashScope）及其子域名，由你在 AI 设置中自行指定',
+    'OpenCSG 模型网关（opencsg.com）或阿里云百炼（DashScope）及其子域名，由你在 AI 设置中自行指定',
     '识别照片中的食物并估算整份热量与营养素',
     '仅在 AI 识别页由你选图或拍照，并在上传确认窗点击“同意并识别”之后；拒绝上传仍可手动记录',
     'HTTPS 请求，每次上传前单独征求同意'),

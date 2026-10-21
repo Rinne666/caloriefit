@@ -11,13 +11,22 @@ export class AiConfigKeys {
 }
 
 export class AiDefaults {
-  static readonly BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-  static readonly MODEL_NAME = 'qwen3-vl-plus';
+  // 默认走 OpenCSG 网关（OpenAI 兼容）。实测 deepseek-v4.1-flash-1017 可吃
+  // image_url（usage 返回 image_tokens），识别准确且延迟 5~7s，落在 30s 超时内。
+  static readonly BASE_URL = 'https://opencsg.com/aigateway/v1';
+  static readonly MODEL_NAME = 'deepseek-v4.1-flash-1017';
   static readonly REMEMBER_KEY = false;
   static readonly DEMO_MODE = false;
 }
 
-export const AI_SECRET_ALIAS = 'caloriefit_dashscope_key';
+/**
+ * 安全存储里的凭证别名。
+ * 原为 'caloriefit_dashscope_key'，换服务方后改成与厂商无关的名字；
+ * 旧别名下的历史 Key 由 AiCredentialStore 主动清理，避免在系统安全存储里留孤儿凭证。
+ */
+export const AI_SECRET_ALIAS = 'caloriefit_ai_key';
+/** 旧别名，仅用于清理遗留凭证，不再写入。 */
+export const AI_LEGACY_SECRET_ALIAS = 'caloriefit_dashscope_key';
 
 /** 图片约束（客户端策略） */
 export class AiImageLimits {
@@ -89,9 +98,9 @@ export function aiErrorText(code: AiErrorCode): string {
     case AiErrorCode.FORBIDDEN:
       return '没有模型访问权限，请检查服务配置';
     case AiErrorCode.RATE_LIMITED:
-      return '请求过于频繁，请稍后重试';
+      return '请求过于频繁或模型容量已满，请稍后重试';
     case AiErrorCode.QUOTA_EXCEEDED:
-      return '模型调用额度不足，请检查百炼控制台';
+      return '模型调用额度不足，请检查 AI 服务控制台';
     case AiErrorCode.SERVER_ERROR:
       return '模型服务暂时不可用，请稍后重试';
     case AiErrorCode.INVALID_RESPONSE:

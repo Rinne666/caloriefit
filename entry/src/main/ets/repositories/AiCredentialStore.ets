@@ -7,7 +7,7 @@
 import asset from '@ohos.security.asset';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AI_SECRET_ALIAS, AiErrorCode, AiError } from '../common/AiConstants';
+import { AI_SECRET_ALIAS, AI_LEGACY_SECRET_ALIAS, AiErrorCode, AiError } from '../common/AiConstants';
 
 export class AiCredentialStore {
   private static sessionKey: string | null = null;
@@ -15,6 +15,25 @@ export class AiCredentialStore {
   private static aliasBytes(): Uint8Array {
     const encoder = new util.TextEncoder();
     return encoder.encodeInto(AI_SECRET_ALIAS);
+  }
+
+  /**
+   * 清理旧服务方（百炼）时代遗留的凭证别名。
+   * 换服务方后新别名不再覆盖旧条目，不主动清掉就会在系统安全存储里留一份孤儿 Key。
+   * 尽力而为：清理失败不影响本次保存结果。
+   */
+  private static async removeLegacyAlias(): Promise<void> {
+    const encoder = new util.TextEncoder();
+    const removeMap: asset.AssetMap = new Map();
+    removeMap.set(asset.Tag.ALIAS, encoder.encodeInto(AI_LEGACY_SECRET_ALIAS));
+    try {
+      await asset.remove(removeMap);
+    } catch (e) {
+      const err = e as BusinessError;
+      if (err.code !== asset.ErrorCode.NOT_FOUND) {
+        console.warn(`legacy credential cleanup failed: ${err.code}`);
+      }
+    }
   }
 
   static async getApiKey(): Promise<string | null> {
@@ -74,6 +93,7 @@ export class AiCredentialStore {
     }
     // 仅在安全存储操作成功后更新本会话凭证。
     AiCredentialStore.sessionKey = apiKey;
+    await AiCredentialStore.removeLegacyAlias();
   }
 
   /** 删除持久化凭证，但保留当前会话中的密钥。 */

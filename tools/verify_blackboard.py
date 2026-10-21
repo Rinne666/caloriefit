@@ -13,6 +13,7 @@
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -63,6 +64,44 @@ def big_images(nodes, min_side=40, max_side=700):
     return hits
 
 
+def image_nodes():
+    """返回 UI 树里所有 Image 节点及其左上角坐标。"""
+    out = []
+    for n in all_nodes():
+        if n['type'] != 'Image':
+            continue
+        nums = [int(x) for x in re.findall(r'\d+', n['bounds'] or '')]
+        if len(nums) < 4:
+            continue
+        w = nums[2] - nums[0]
+        h = nums[3] - nums[1]
+        out.append({'tl': (nums[0], nums[1]), 'w': w, 'h': h, 'bounds': n['bounds']})
+    return out
+
+
+def drag_first_sticker():
+    """在黑板上拖一张贴纸，看它的位置有没有真的变。
+
+    自由画布是这轮的核心：贴纸必须能被按住拖走。
+    判据用 **UI 树里图片节点的左上角前后对比**，而不是「点击没报错」——
+    手势被页面 Scroll 抢走时点击同样不会报错，但贴纸一动不动。
+    """
+    before = [n for n in image_nodes() if 60 <= n['w'] <= 700 and 60 <= n['h'] <= 700]
+    if not before:
+        return False
+    target = before[0]
+    x = target['tl'][0] + target['w'] // 2
+    y = target['tl'][1] + target['h'] // 2
+    V.sh('shell', 'uitest', 'uiInput', 'swipe', str(x), str(y),
+         str(x + 70), str(y + 50), '1500')
+    time.sleep(2.0)
+    after = image_nodes()
+    for n in after:
+        if abs(n['tl'][0] - target['tl'][0]) > 12 or abs(n['tl'][1] - target['tl'][1]) > 12:
+            return True
+    return False
+
+
 def step(name, ok, detail=''):
     print(f'  {"PASS" if ok else "FAIL"}  {name}  {detail}')
     return ok
@@ -77,11 +116,13 @@ def ensure_ready():
     # install -r 之后应用可能停在后台，必须先拉起来再谈后续。
     V.sh('shell', 'aa', 'start', '-b', V.BUNDLE, '-a', V.ABILITY)
     time.sleep(4.0)
-    if V.has(V.dump(), '今日热量'):
+    # 2026-10-21：黑板改版后今日页的判据是「今日摄入」
+    # （原来写的「今日热量」是半环卡的文案，早已迁到进度页）
+    if V.has(V.dump(), '今日摄入'):
         return True
     if not V.accept_privacy_for_test():
         return False
-    if V.has(V.dump(), '今日热量'):
+    if V.has(V.dump(), '今日摄入'):
         return True
     return V.complete_onboarding_for_test()
 
@@ -117,7 +158,7 @@ def cleanup_created_record():
     """
     if not V.home_top():
         return False
-    if not V.tap('我的', settle=2.5):
+    if not V.tap_tab('我的', settle=2.5):
         return False
     V.scroll_top()
     if not V.find_and_tap('全部餐食', settle=3.0):
@@ -167,7 +208,10 @@ def main():
         results.append(step('回到今日首页', False, '无法回到首页'))
     else:
         results.append(step('回到今日首页', True))
-    if not V.tap('拍照识别食物', settle=4.0):
+    # 2026-10-21：黑板占满首屏后，「今日餐食」标题右侧的拍照入口落在
+    # 右下角悬浮「+」按钮下方，点它会先命中 FAB。
+    # 改点黑板操作排里的常驻「拍照」入口（一拍即贴的主入口）。
+    if not V.tap('拍照', settle=4.0):
         results.append(step('进入 AI 识别页', False))
         return report(results)
     results.append(step('进入 AI 识别页', True))
@@ -218,12 +262,22 @@ def main():
     ok = V.has(nodes, '今日摄入') and (V.has(nodes, '还可以吃') or V.has(nodes, '已超出'))
     results.append(step('黑板表头渲染', ok))
     ok = V.has(nodes, '演示食物（模拟识别）')
-    results.append(step('便签上出现食物名', ok))
-    ok = V.has(nodes, '620 kcal')
-    results.append(step('便签上出现热量', ok))
+    results.append(step('贴纸上出现食物名', ok))
+    # 2026-10-21：贴纸改成两行热量签 —— 名称一行、餐次+热量+三色点一行，
+    # 「620」和「kcal」是两个独立文本节点，不能再按「620 kcal」整串匹配
+    ok = V.has(nodes, '620') and V.has(nodes, 'kcal')
+    results.append(step('贴纸上出现热量', ok))
+    # 自由画布的操作排
+    ok = all(V.has(nodes, t) for t in ('网格', '分栏', '规整', '底纹', '分享'))
+    results.append(step('黑板操作排渲染', ok))
     imgs = big_images(all_nodes())
-    results.append(step('便签上出现贴纸图', len(imgs) > 0, f'{len(imgs)} 个图像节点'))
+    results.append(step('贴纸上出现贴纸图', len(imgs) > 0, f'{len(imgs)} 个图像节点'))
     V.shot('bb_04_blackboard')
+
+    # ---------- 4. 自由画布：拖动贴纸 ----------
+    print('\n[4] 自由画布拖拽')
+    moved = drag_first_sticker()
+    results.append(step('贴纸可以被拖动', moved))
 
     # 清理本次创建的记录，保证脚本可重复运行、不污染其它回归项
     results.append(step('清理本次创建的记录', cleanup_created_record()))

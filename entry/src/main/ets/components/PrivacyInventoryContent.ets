@@ -164,7 +164,7 @@ export struct PrivacyInventoryContent {
           .width('100%')
 
         this.SectionTitle('一、共享给第三方的信息',
-          '接收方由你在 AI 设置中自行指定，当前限定为阿里云百炼（DashScope）及其子域名。')
+          '接收方由你在 AI 设置中自行指定，当前限定为 OpenCSG 模型网关（opencsg.com）以及阿里云百炼（DashScope）及其子域名。')
         ForEach(SHARED_INFO_LIST, (item: SharedInfoItem) => {
           this.SharedRow(item)
         }, (item: SharedInfoItem) => item.name)
