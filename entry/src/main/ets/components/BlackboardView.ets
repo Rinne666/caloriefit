@@ -46,7 +46,8 @@ import { BlackboardNodeWrapper } from './BlackboardNodeWrapper';
 import { FoodStickerItem } from './FoodStickerItem';
 import { StickyNoteItem } from './StickyNoteItem';
 import { NoteEditorSheet, NodeEditResult } from './NoteEditorSheet';
-import { SharePosterDialog } from './SharePosterDialog';
+import { AppDialogService } from '../services/AppDialogService';
+import { color } from '../common/DesignTokens';
 
 /** 日期胶囊上的一项 */
 class DateChip {
@@ -108,6 +109,22 @@ class BoardAiParams {
   }
 }
 
+/**
+ * 跳到分享卡预览页的参数。
+ *
+ * 与 pages/SharePosterPage.ets 的 SharePosterParams 结构一致 ——
+ * 各页面各自定义一份，是为了让页面之间不互相 import（见 BoardFoodEditParams 的说明）。
+ */
+class BoardPosterParams {
+  posterUri: string = '';
+  savedPath: string = '';
+
+  constructor(posterUri: string, savedPath: string) {
+    this.posterUri = posterUri;
+    this.savedPath = savedPath;
+  }
+}
+
 @Component
 export struct BlackboardView {
   /** 路由栈：从黑板跳到餐食编辑页用 */
@@ -134,10 +151,6 @@ export struct BlackboardView {
   @State private sheetOpen: boolean = false;
   /** 正在编辑的节点 */
   @State private editingNode: BoardNodeModel | null = null;
-  /** 分享卡预览是否打开 */
-  @State private posterOpen: boolean = false;
-  @State private posterUri: string = '';
-  @State private posterPath: string = '';
   /** 是否显示粉笔分栏线 */
   @State private showDividers: boolean = false;
   /** 画布实际宽度 */
@@ -359,13 +372,23 @@ export struct BlackboardView {
     }
   }
 
-  /** 保存抽屉里的编辑 */
+  /**
+   * 保存抽屉里的编辑。
+   *
+   * ## 餐次要写进 food_log
+   * 贴纸节点是饮食记录的**投影**，内容一律从 food_log 读
+   * （见 BoardRepository.resolveFoodStickers）。
+   * 所以在抽屉里把「早餐」改成「午餐」，只更新 board_node 是没用的 ——
+   * 下次加载又被 food_log 覆盖回早餐。
+   * 之前就是这样：改了看着生效，切换日期回来又变回去了。
+   */
   private async saveNodeEdit(result: NodeEditResult): Promise<void> {
     const node = this.editingNode;
     if (node === null) {
       this.sheetOpen = false;
       return;
     }
+    const mealChanged = node.mealCategory !== result.mealCategory;
     node.title = result.title;
     node.calories = result.calories;
     node.proteinGrams = result.proteinG;
@@ -386,32 +409,72 @@ export struct BlackboardView {
         result.moodEmoji, result.companionText, result.memoText,
         result.paperStyle, result.pinType
       );
+      // 餐次变了：饮食记录那边也要改，否则汇总和黑板对不上
+      if (mealChanged && node.nodeType === BoardNodeType.FOOD_STICKER && node.foodId !== null) {
+        await FoodRepository.updateMealType(node.foodId, result.mealCategory);
+      }
     } catch (_e) {
       // 忽略
     }
     this.sheetOpen = false;
     this.editingNode = null;
+    if (mealChanged) {
+      // 餐次变了 → 汇总数字要重算，其他页面也要跟着更新
+      await this.refreshSummary();
+      this.bumpRefresh();
+    }
   }
 
-  /** 删除节点 */
+  /**
+   * 删除节点。
+   *
+   * ## 贴纸节点要先确认
+   * 贴纸节点是饮食记录的投影，删它等于**删掉那条饮食记录** ——
+   * 「今日摄入」里的热量也跟着没了。
+   * 其他页面（全部餐食）删记录都有确认，黑板这个入口原来直接就删了，
+   * 用户一点就丢数据。这里补上确认，并把后果说清楚。
+   */
   private async deleteNode(node: BoardNodeModel): Promise<void> {
     this.sheetOpen = false;
     this.editingNode = null;
+    if (node.nodeType === BoardNodeType.FOOD_STICKER && node.foodId !== null) {
+      AppDialogService.confirm('删除这条饮食记录？',
+        `「${node.title}」会连同它在今日摄入里的 ${node.calories} kcal 一起删除，黑板上的贴纸也会消失。`,
+        '删除', () => {
+          this.doDeleteFoodNode(node);
+        });
+      return;
+    }
+    // 便签 / 示例贴纸只删板面节点，不牵涉饮食记录
     try {
-      if (node.nodeType === BoardNodeType.FOOD_STICKER && node.foodId !== null) {
-        // 贴纸节点是饮食记录的投影：删节点等于删记录
-        await FoodRepository.delete(node.foodId);
-        await this.refreshSummary();
-      } else {
-        await BoardRepository.delete(node.id);
-      }
+      await BoardRepository.delete(node.id);
     } catch (_e) {
       // 忽略
     }
     await this.loadNodes(this.selectedDate);
   }
 
-  /** 复制到指定日期 */
+  /** 确认之后的真正删除 */
+  private async doDeleteFoodNode(node: BoardNodeModel): Promise<void> {
+    try {
+      if (node.foodId !== null) {
+        await FoodRepository.delete(node.foodId);
+      }
+      await this.refreshSummary();
+      this.bumpRefresh();
+    } catch (_e) {
+      // 忽略
+    }
+    await this.loadNodes(this.selectedDate);
+  }
+
+  /**
+   * 复制到指定日期。
+   *
+   * 复制完必须**当场刷新**：黑板节点、摄入汇总、以及其他页面（今日页/进度页）
+   * 都要看到新记录。复制完只弹个 toast 不刷新的话，
+   * 用户会看到「已复制到 2026-10-21」但板子上还是原来那一条。
+   */
   private async copyNode(node: BoardNodeModel, targetDate: string): Promise<void> {
     this.sheetOpen = false;
     this.editingNode = null;
@@ -420,7 +483,21 @@ export struct BlackboardView {
       this.getUIContext().getPromptAction().showToast({ message: `已复制到 ${targetDate}` });
     } catch (_e) {
       this.getUIContext().getPromptAction().showToast({ message: '复制失败' });
+      return;
     }
+    // 目标可能就是今天：今天的板面与汇总要立刻重画
+    if (targetDate === this.selectedDate) {
+      await this.loadNodes(this.selectedDate);
+      await this.refreshSummary();
+    }
+    // 别的页面（今日页、进度页）也要知道有新记录
+    this.bumpRefresh();
+  }
+
+  /** 广播一次数据更新，让别的页面跟着重载 */
+  private bumpRefresh(): void {
+    const cur = AppStorage.get<number>('refreshTick') ?? 0;
+    AppStorage.setOrCreate<number>('refreshTick', cur + 1);
   }
 
   /** 去餐食编辑页改食物本身 */
@@ -488,8 +565,18 @@ export struct BlackboardView {
     }
   }
 
-  /** 生成今日手帐分享卡 */
+  /**
+   * 生成今日手帐分享卡。
+   *
+   * 截完直接推一个**独立的预览页**（NavDestination），不再用页内覆盖层：
+   *   · 页内覆盖层只在黑板组件的范围内，首页的 FAB 和底栏仍会盖在它上面；
+   *   · 长画布的预览会把「关闭」按钮挤出可见区域，用户退不出；
+   *   · 页内覆盖层收不到系统返回键，按返回会直接退出应用。
+   * 独立路由页这三条全解决：全屏、底部固定操作栏、返回键由 Navigation 接管。
+   */
   private async sharePoster(): Promise<void> {
+    let posterUri = '';
+    let savedPath = '';
     try {
       const options: componentSnapshot.SnapshotOptions = {
         scale: 2,
@@ -502,20 +589,25 @@ export struct BlackboardView {
           const png = await packer.packToData(pixelMap, { format: 'image/png', quality: 100 });
           const helper = new util.Base64Helper();
           const b64 = helper.encodeToStringSync(new Uint8Array(png));
-          this.posterUri = `data:image/png;base64,${b64}`;
+          posterUri = `data:image/png;base64,${b64}`;
         } finally {
           packer.release();
         }
         // 同时存一份到沙箱，方便后续接「保存到相册」
-        this.posterPath = await this.savePoster(pixelMap);
-        this.posterOpen = true;
+        savedPath = await this.savePoster(pixelMap);
       } finally {
         pixelMap.release();
       }
     } catch (e) {
       const err = e as Error;
-      this.getUIContext().getPromptAction().showToast({ message: `生成失败：${err.message}` });
+      // 抛出来的东西未必是 Error，message 可能是 undefined —— 那样用户只会看到
+      // 「生成失败：undefined」，完全不知道发生了什么。
+      const detail: string = (err !== null && err !== undefined && err.message !== undefined &&
+        err.message !== null && err.message.length > 0) ? err.message : '未知错误';
+      this.getUIContext().getPromptAction().showToast({ message: `生成失败：${detail}` });
+      return;
     }
+    this.navStack.pushPathByName('SharePoster', new BoardPosterParams(posterUri, savedPath));
   }
 
   private async savePoster(pixelMap: image.PixelMap): Promise<string> {
@@ -550,6 +642,15 @@ export struct BlackboardView {
 
   /* ------------------------------ 构建 ------------------------------ */
 
+  /**
+   * 日期胶囊条。
+   *
+   * ## 颜色用的是应用主题的文本色，不是板面粉笔色
+   * 日期条在**板面外面**，落在页面的浅色背景上。
+   * 之前未选中日期写死成粉笔白 `#F4F1E4`，配浅色页面背景 `#EDF1FA`
+   * 两色亮度对比只有 1.001:1 —— 19、20 日几乎看不见。
+   * 粉笔色只属于板面内部，日期条用文本 token。
+   */
   @Builder
   DateStrip() {
     Row({ space: 6 }) {
@@ -558,10 +659,10 @@ export struct BlackboardView {
           Text(chip.day)
             .fontSize(15)
             .fontWeight(FontWeight.Bold)
-            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : '#F4F1E4')
+            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : color.text)
           Text(chip.week)
             .fontSize(10)
-            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : '#C6CFC4')
+            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : color.textHint)
         }
         .width(36)
         .height(46)
@@ -686,23 +787,35 @@ export struct BlackboardView {
     .margin({ top: 8 })
   }
 
-  /** 粉笔分栏线（早 / 午 / 晚 / 加餐） */
+  /**
+   * 粉笔分栏线（早 / 午 / 晚 / 加餐）。
+   *
+   * ## 必须用 Row 排，不能全塞进 Stack
+   * 原来四个 Column 直接放在同一个 Stack 里（默认 TopStart 对齐），
+   * 四个标题的 bounds 完全一样 —— 早餐午餐晚餐加餐叠在同一个点上。
+   * 现在用 Row 横排，列宽与 `mealColumnFor()` 的四等分一致，
+   * 贴纸落在哪一栏，标题就在哪一栏上方。
+   */
   @Builder
   Dividers() {
-    ForEach([0, 1, 2, 3], (i: number) => {
-      Column() {
-        Text(MEAL_LABELS[i])
-          .fontSize(9)
-          .fontColor(this.inkDimColor())
-        Divider()
-          .vertical(true)
-          .color(this.inkDimColor())
-          .strokeWidth(1)
-      }
-      .width(this.canvasWidth / 4)
-      .height('100%')
-      .alignItems(HorizontalAlign.Center)
-    }, (i: number) => i.toString())
+    Row() {
+      ForEach([0, 1, 2, 3], (i: number) => {
+        Column() {
+          Text(MEAL_LABELS[i])
+            .fontSize(9)
+            .fontColor(this.inkDimColor())
+          Divider()
+            .vertical(true)
+            .color(this.inkDimColor())
+            .strokeWidth(1)
+        }
+        .width(this.canvasWidth / 4)
+        .height('100%')
+        .alignItems(HorizontalAlign.Center)
+      }, (i: number) => i.toString())
+    }
+    .width('100%')
+    .height('100%')
   }
 
   /** 节点内容 */
@@ -776,13 +889,6 @@ export struct BlackboardView {
     .width('100%')
     .height(this.canvasHeight())
     .clip(true)
-    .id('boardCanvasShot')
-    .onAreaChange((_old: Area, area: Area) => {
-      const w = parseFloat(area.width.toString());
-      if (!isNaN(w) && w > 0) {
-        this.canvasWidth = w;
-      }
-    })
   }
 
   /** 结构化网格视图：按餐次分组 */
@@ -923,22 +1029,9 @@ export struct BlackboardView {
   }
 
   build() {
-    Stack({ alignContent: Alignment.BottomEnd }) {
-      Column() {
-        this.DateStrip()
-        this.Board()
-      }
-      .width('100%')
-
-      if (this.posterOpen) {
-        SharePosterDialog({
-          posterUri: this.posterUri,
-          savedPath: this.posterPath,
-          onClose: () => {
-            this.posterOpen = false;
-          }
-        })
-      }
+    Column() {
+      this.DateStrip()
+      this.Board()
     }
     .width('100%')
   }
@@ -951,11 +1044,31 @@ export struct BlackboardView {
         this.Header()
         this.ActionRow()
 
-        if (this.viewMode === BoardViewMode.FREE_CANVAS) {
-          this.FreeCanvas()
-        } else {
-          this.StructuredGrid()
+        /**
+         * 画布区：**两种视图共用的快照目标**。
+         *
+         * 之前 `.id('boardCanvasShot')` 只挂在自由画布上，
+         * 网格视图里根本没有这个节点 —— 网格下点分享必然失败
+         * （componentSnapshot 找不到节点，抛出的错误连 message 都没有，
+         *  界面上就显示成「生成失败：undefined」）。
+         * 现在 id 挂在这个两种视图都会渲染的容器上，谁在都能截。
+         */
+        Stack() {
+          if (this.viewMode === BoardViewMode.FREE_CANVAS) {
+            this.FreeCanvas()
+          } else {
+            this.StructuredGrid()
+          }
         }
+        .width('100%')
+        .height(this.canvasHeight())
+        .id('boardCanvasShot')
+        .onAreaChange((_old: Area, area: Area) => {
+          const w = parseFloat(area.width.toString());
+          if (!isNaN(w) && w > 0) {
+            this.canvasWidth = w;
+          }
+        })
 
         // 底部：卡通猫 + 粉笔槽
         Row() {

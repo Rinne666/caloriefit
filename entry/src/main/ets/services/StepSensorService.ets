@@ -24,6 +24,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { StepBaselineRepository } from '../repositories/StepBaselineRepository';
 import { ActivityRepository } from '../repositories/ActivityRepository';
 import { StepReading, StepBaselineState, computeDailySteps, DEFAULT_TIMESTAMP_UNIT } from './StepBaseline';
+import { ConsentState } from './ConsentState';
 import { todayKey } from '../common/DateUtils';
 
 const DOMAIN = 0x0003;
@@ -149,6 +150,18 @@ export class StepSensorService {
   static async start(ctx: common.UIAbilityContext, requestPermission: boolean): Promise<StepSensorStatus> {
     StepSensorService.ctx = ctx;
     if (StepSensorService.subscribed) {
+      return StepSensorService.status;
+    }
+
+    /**
+     * 同意态闸门。
+     *
+     * 用户撤回健康信息同意后，系统权限可能还在（权限是用户单独授予的），
+     * 但**同意已经没了**，这时采集步数就是没依据的。
+     * 所以订阅之前先看同意状态。
+     */
+    if (!ConsentState.isAccepted(ctx)) {
+      StepSensorService.setStatus(StepSensorStatus.IDLE, '未获得健康信息同意，不采集');
       return StepSensorService.status;
     }
 
@@ -308,6 +321,16 @@ export class StepSensorService {
     StepSensorService.pending = null;
     const ctx = StepSensorService.ctx;
     if (ctx === null) {
+      return;
+    }
+    /**
+     * 落库前再校验一次同意态。
+     *
+     * 撤回同意可能发生在采集期间（用户在别的页面撤的），
+     * 所以每次写库前都要确认同意还在，否则撤回后数据还在长。
+     */
+    if (!ConsentState.isAccepted(ctx)) {
+      hilog.info(DOMAIN, TAG, 'consent revoked, drop pending reading');
       return;
     }
     try {

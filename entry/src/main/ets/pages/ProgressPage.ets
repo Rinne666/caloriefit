@@ -18,6 +18,7 @@ import { ProfileRepository } from '../repositories/ProfileRepository';
 import { DailySummaryService } from '../services/DailySummaryService';
 import { PROGRESS_RANGES, Provenance } from '../services/MockContent';
 import { setComingSoon, ComingSoonPage } from '../components/ComingSoonPage';
+import { OverlayBackHandler } from '../common/OverlayBackHandler';
 import { toDateKey, parseDateKey, formatNumber } from '../common/DateUtils';
 const DAY_LABELS: string[] = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -25,6 +26,16 @@ const DAY_LABELS: string[] = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 export struct ProgressPage {
   @Consume('navStack') navStack: NavPathStack;
   @StorageLink('selectedDate') @Watch('reload') selectedDate: string = '';
+  /**
+   * 记录更新广播。
+   *
+   * 之前这一页只听 `selectedDate`，于是「今日页加了一条 → 回进度页还是 0」——
+   * 用户必须手动切一次统计范围才会刷新。写库的页面（编辑页、全部餐食页）
+   * 都只广播 `refreshTick`，这里必须一起订阅。
+   */
+  @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
+  /** 底 Tab 切回本页时广播，用来兜住「数据在别处变了」的场景 */
+  @StorageLink('tabTick') @Watch('reload') tabTick: number = 0;
   @State private range: number = 1;
   @State private points: DayPoint[] = [];
   @State private targetKcal: number = 1800;
@@ -35,6 +46,53 @@ export struct ProgressPage {
   @State private streakDays: number = 0;
   /** Report 导出的占位层 */
   @State private reportVisible: boolean = false;
+  /** 浮层在返回键登记表里的 id（-1 = 没登记） */
+  private reportOverlayId: number = -1;
+  private csOverlayId: number = -1;
+
+  /**
+   * 打开 Report 占位层。
+   *
+   * 浮层不是 NavDestination，收不到系统返回键 ——
+   * 必须在返回键登记表里登记一个「怎么关自己」的回调，
+   * 否则用户按返回会直接退出应用（浮层还开着，人回了桌面）。
+   */
+  private openReport(): void {
+    setComingSoon('Report 导出',
+      '将一段时间的摄入与宏量记录整理为个人报告',
+      '当前项目尚未实现报告生成与本地文件导出',
+      '实现 PDF 或图片生成，并由用户自主保存到设备',
+      Provenance.MEASURED);
+    this.reportVisible = true;
+    this.reportOverlayId = OverlayBackHandler.push(() => {
+      this.closeReport();
+    });
+  }
+
+  private closeReport(): void {
+    this.reportVisible = false;
+    if (this.reportOverlayId >= 0) {
+      OverlayBackHandler.remove(this.reportOverlayId);
+      this.reportOverlayId = -1;
+    }
+  }
+
+  /** 打开「未实现」说明层 */
+  private openComingSoon(title: string, blocker: string, needed: string): void {
+    setComingSoon(title, '恢复生理状态的综合评分', blocker, needed, Provenance.INFERRED);
+    this.csVisible = true;
+    this.csOverlayId = OverlayBackHandler.push(() => {
+      this.closeComingSoon();
+    });
+  }
+
+  private closeComingSoon(): void {
+    this.csVisible = false;
+    if (this.csOverlayId >= 0) {
+      OverlayBackHandler.remove(this.csOverlayId);
+      this.csOverlayId = -1;
+    }
+  }
 
   /**
    * 连续记录天数：从今天往回数，每天有饮食记录则累计。
@@ -212,12 +270,7 @@ export struct ProgressPage {
             .backgroundColor(color.glassFill)
             .borderRadius(radius.pill)
             .onClick(() => {
-              setComingSoon('Report 导出',
-                '将一段时间的摄入与宏量记录整理为个人报告',
-                '当前项目尚未实现报告生成与本地文件导出',
-                '实现 PDF 或图片生成，并由用户自主保存到设备',
-                Provenance.MEASURED);
-              this.reportVisible = true;
+              this.openReport();
             })
         }
         .width('100%')
@@ -372,7 +425,7 @@ export struct ProgressPage {
             .backgroundColor(Color.Transparent)
             .margin({ top: 46, left: 16 })
             .onClick(() => {
-              this.reportVisible = false;
+              this.closeReport();
             })
         }
         .width('100%')
@@ -391,7 +444,7 @@ export struct ProgressPage {
             .backgroundColor(Color.Transparent)
             .margin({ top: 46, left: 16 })
             .onClick(() => {
-              this.csVisible = false;
+              this.closeComingSoon();
             })
         }
         .width('100%')
@@ -436,8 +489,7 @@ export struct ProgressPage {
     .border({ width: glass.borderWidth, color: color.glassBorder })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      setComingSoon(title, '恢复生理状态的综合评分', blocker, needed, Provenance.INFERRED);
-      this.csVisible = true;
+      this.openComingSoon(title, blocker, needed);
     })
   }
 }

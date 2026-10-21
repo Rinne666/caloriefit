@@ -37,6 +37,7 @@ import { MealDetailPage } from './MealDetailPage';
 import { ActivityEditPage } from './ActivityEditPage';
 import { AiRecognitionPage } from './AiRecognitionPage';
 import { AiSettingsPage } from './AiSettingsPage';
+import { SharePosterPage } from './SharePosterPage';
 import { ComingSoonPage } from '../components/ComingSoonPage';
 import { OnboardingPage } from './OnboardingPage';
 import { OnboardingService } from '../services/OnboardingService';
@@ -47,6 +48,7 @@ import { PrivacyInventoryPage } from './PrivacyInventoryPage';
 import { AccountPage } from './AccountPage';
 import { common } from '@kit.AbilityKit';
 import { color, fontSize, pageGradient } from '../common/DesignTokens';
+import { OverlayBackHandler } from '../common/OverlayBackHandler';
 import { todayKey } from '../common/DateUtils';
 
 @Entry
@@ -75,6 +77,7 @@ struct Index {
       const settings: AppSettings = await SettingsRepository.getSettings();
       AppStorage.setOrCreate<AppSettings>('appSettings', settings);
       AppStorage.setOrCreate<number>('refreshTick', 0);
+      AppStorage.setOrCreate<number>('tabTick', 0);
       this.privacyConsentAccepted = PrivacyConsentService.isAccepted(context as common.UIAbilityContext);
       AppStorage.setOrCreate<boolean>('privacyConsentAccepted', this.privacyConsentAccepted);
       this.onboarded = OnboardingService.isDone(context as common.UIAbilityContext);
@@ -87,6 +90,32 @@ struct Index {
 
   private onDateChanged(): void {
     // 切换日期后各页面通过自己的 @Watch 重新加载
+  }
+
+  /**
+   * 系统返回键。
+   *
+   * 页内浮层（Report 占位、分享预览、未实现说明、重看引导）不是 NavDestination，
+   * 收不到返回键 —— 不接管的话，用户按返回会**直接退出应用**，
+   * 浮层还开着，人却回到了桌面。
+   *
+   * 系统返回键只派发给 @Entry 组件，所以统一在这里处理：
+   * 有浮层开着就关掉最上面那个（返回 true 表示已处理），没有就交回系统。
+   */
+  onBackPress(): boolean {
+    return OverlayBackHandler.closeTop();
+  }
+
+  /**
+   * 底 Tab 切换计数。
+   *
+   * 进度页原来只听 `selectedDate`，于是「今日页新增一条 → 回进度页还是旧数据」。
+   * `refreshTick` 覆盖的是「写库时广播」的场景；这里补的是
+   * 「数据在别处变了、切回来才发现」的场景，两者都要有。
+   */
+  private bumpTabTick(): void {
+    const cur = AppStorage.get<number>('tabTick') ?? 0;
+    AppStorage.setOrCreate<number>('tabTick', cur + 1);
   }
 
   private onPrivacyAccepted(): void {
@@ -119,6 +148,16 @@ struct Index {
       AiRecognitionPage()
     } else if (name === 'AiSettings') {
       AiSettingsPage()
+    } else if (name === 'SharePoster') {
+      /**
+       * 手帐分享卡预览。
+       *
+       * 根节点就是 NavDestination（和 MealDetailPage 一样），
+       * 所以这里**不能**再包一层 —— 包了就成了嵌套 NavDestination。
+       * 用独立路由页而不是页内覆盖层：页内覆盖层收不到系统返回键
+       * （按返回会直接退出应用），而且预览会被首页的 FAB 和底栏盖住。
+       */
+      SharePosterPage()
     } else if (name === 'PrivacyPolicy') {
       PrivacyPolicyPage()
     } else if (name === 'PrivacyInventory') {
@@ -285,6 +324,10 @@ struct Index {
           .barHeight(52)
           .onChange((index: number) => {
             this.selectedBottomTab = index;
+            // 切 Tab 时广播一次「视图回来了」——
+            // 有些数据是在别的页写的，切回来必须重新拉一遍，
+            // 不能指望写方刚好广播过 refreshTick。
+            this.bumpTabTick();
           })
           .width('100%')
           .height('100%')

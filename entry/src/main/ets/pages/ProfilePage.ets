@@ -19,9 +19,10 @@ import {
 } from '../common/DesignTokens';
 import { ThemeService } from '../services/ThemeService';
 import { DATA_SOURCE_LABEL } from '../common/Constants';
-import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivityKcalGoal } from '../common/Validators';
+import { validateBudget, validateStepsGoal, validateMinutesGoal, validateActivityKcalGoal, validateMacroGrams, validateBodyWeight, validateBodyHeight, validateBodyAge, validateBodyFat } from '../common/Validators';
 import { YouEntry, Provenance } from '../services/MockContent';
 import { setComingSoon, ComingSoonPage } from '../components/ComingSoonPage';
+import { OverlayBackHandler } from '../common/OverlayBackHandler';
 import { OnboardingPage } from './OnboardingPage';
 import { PersonalDataService } from '../services/PersonalDataService';
 import { PrivacyInventoryParams } from './PrivacyInventoryPage';
@@ -65,6 +66,151 @@ export struct ProfilePage {
   /** 重看引导的覆盖层 */
   @State private onboardingVisible: boolean = false;
 
+  /** 浮层在返回键登记表里的 id（-1 = 没登记） */
+  private csOverlayId: number = -1;
+  private onboardingOverlayId: number = -1;
+  private macroOverlayId: number = -1;
+
+  /* 宏量目标 */
+  /** 宏量目标面板是否展开 */
+  @State private macroPanelVisible: boolean = false;
+  /** true = 按体征自动推导；false = 手动覆盖 */
+  @State private macroAuto: boolean = true;
+  @State private macroProteinInput: string = '';
+  @State private macroCarbsInput: string = '';
+  @State private macroFatInput: string = '';
+  /** 当前生效的目标摘要（蛋白 / 碳水 / 脂肪 g） */
+  @State private macroSummary: string = '';
+
+  /**
+   * 读宏量目标状态。
+   *
+   * 之前这个功能在「我的 → 修改宏量」里只弹一个 toast，
+   * 仓储层的 saveMacroTarget() 根本没有页面调用方 ——
+   * 入口标着「已实现」，实际什么都改不了。
+   */
+  private async loadMacroTarget(): Promise<void> {
+    try {
+      const state = await ProfileRepository.getMacroTargetState();
+      this.macroAuto = state.auto;
+      const eff = state.effective;
+      /**
+       * 表单初值优先用**库里存的手动值**；
+       * 没有手动值（一直是自动模式）时用**当前生效的推导值**预填 ——
+       * 这样用户从自动切到手动，输入框里是有数的，
+       * 而不是三个空框让人自己从零猜。
+       */
+      if (state.storedProteinG !== null) {
+        this.macroProteinInput = `${Math.round(state.storedProteinG)}`;
+      } else if (eff !== null) {
+        this.macroProteinInput = `${Math.round(eff.proteinG)}`;
+      }
+      if (state.storedCarbsG !== null) {
+        this.macroCarbsInput = `${Math.round(state.storedCarbsG)}`;
+      } else if (eff !== null) {
+        this.macroCarbsInput = `${Math.round(eff.carbsG)}`;
+      }
+      if (state.storedFatG !== null) {
+        this.macroFatInput = `${Math.round(state.storedFatG)}`;
+      } else if (eff !== null) {
+        this.macroFatInput = `${Math.round(eff.fatG)}`;
+      }
+      if (eff !== null) {
+        this.macroSummary = `蛋白 ${Math.round(eff.proteinG)}g · 碳水 ${Math.round(eff.carbsG)}g · 脂肪 ${Math.round(eff.fatG)}g`;
+      } else {
+        this.macroSummary = '补全体征档案后自动推导';
+      }
+    } catch (e) {
+      this.macroSummary = '补全体征档案后自动推导';
+    }
+  }
+
+  /** 打开宏量目标面板 */
+  private openMacroPanel(): void {
+    this.loadMacroTarget();
+    this.macroPanelVisible = true;
+    this.macroOverlayId = OverlayBackHandler.push(() => {
+      this.closeMacroPanel();
+    });
+  }
+
+  private closeMacroPanel(): void {
+    this.macroPanelVisible = false;
+    if (this.macroOverlayId >= 0) {
+      OverlayBackHandler.remove(this.macroOverlayId);
+      this.macroOverlayId = -1;
+    }
+  }
+
+  /** 保存手动宏量目标 */
+  private async saveMacroTarget(): Promise<void> {
+    const pP = validateMacroGrams(this.macroProteinInput, '蛋白');
+    if (!pP.ok) {
+      this.getUIContext().getPromptAction().showToast({ message: pP.message });
+      return;
+    }
+    const cP = validateMacroGrams(this.macroCarbsInput, '碳水');
+    if (!cP.ok) {
+      this.getUIContext().getPromptAction().showToast({ message: cP.message });
+      return;
+    }
+    const fP = validateMacroGrams(this.macroFatInput, '脂肪');
+    if (!fP.ok) {
+      this.getUIContext().getPromptAction().showToast({ message: fP.message });
+      return;
+    }
+    const target: MacroTarget = {
+      proteinG: pP.value,
+      carbsG: cP.value,
+      fatG: fP.value
+    };
+    const ok = await ProfileRepository.saveMacroTarget(target);
+    if (!ok) {
+      this.getUIContext().getPromptAction().showToast({ message: '保存失败，请重试' });
+      return;
+    }
+    this.macroAuto = false;
+    await this.loadMacroTarget();
+    this.bumpRefresh();
+    this.getUIContext().getPromptAction().showToast({ message: '宏量目标已保存' });
+  }
+
+  /** 交回自动推导 */
+  private async restoreAutoMacro(): Promise<void> {
+    const ok = await ProfileRepository.useAutoMacroTarget();
+    if (!ok) {
+      this.getUIContext().getPromptAction().showToast({ message: '切换失败，请重试' });
+      return;
+    }
+    this.macroAuto = true;
+    await this.loadMacroTarget();
+    this.bumpRefresh();
+    this.getUIContext().getPromptAction().showToast({ message: '已改为按体征自动推导' });
+  }
+
+  /**
+   * 关闭「未实现」说明层。
+   *
+   * 浮层不是 NavDestination，收不到系统返回键 ——
+   * 不在返回键登记表里登记的话，用户按返回会**直接退出应用**。
+   */
+  private closeComingSoon(): void {
+    this.csVisible = false;
+    if (this.csOverlayId >= 0) {
+      OverlayBackHandler.remove(this.csOverlayId);
+      this.csOverlayId = -1;
+    }
+  }
+
+  /** 关闭「重看引导」覆盖层 */
+  private closeOnboarding(): void {
+    this.onboardingVisible = false;
+    if (this.onboardingOverlayId >= 0) {
+      OverlayBackHandler.remove(this.onboardingOverlayId);
+      this.onboardingOverlayId = -1;
+    }
+  }
+
   enterPage(): void {
     this.entered = true;
   }
@@ -78,7 +224,9 @@ export struct ProfilePage {
    */
   private openYouEntry(e: YouEntry): void {
     if (e.id === 'modify_macros') {
-      this.getUIContext().getPromptAction().showToast({ message: '宏量目标在本页「每日目标设置」中修改' });
+      // 以前这里只弹一个 toast，仓储层的保存方法根本没有页面调用方 ——
+      // 入口标着「已实现」却什么都改不了。现在真的打开宏量目标表单。
+      this.openMacroPanel();
       return;
     }
     if (e.route === 'FoodLog' || e.route === 'ActivityLog') {
@@ -88,6 +236,9 @@ export struct ProfilePage {
     setComingSoon(e.title, e.subtitle, '原版有实现，本地没有可复现的证据或后端',
       '抓包 / 补后端 / 补算法后即可替换为真实页面', e.provenance);
     this.csVisible = true;
+    this.csOverlayId = OverlayBackHandler.push(() => {
+      this.closeComingSoon();
+    });
   }
 
   /**
@@ -155,6 +306,7 @@ export struct ProfilePage {
     this.loadSettings();
     this.loadBodyProfile();
     this.loadTheme();
+    this.loadMacroTarget();
   }
 
   private static readonly THEME_ORDER: ThemeMode[] =
@@ -240,27 +392,43 @@ export struct ProfilePage {
   }
 
   private async saveBodyProfile(): Promise<void> {
-    const w = parseFloat(this.weightInput);
-    const h = parseFloat(this.heightInput);
-    const a = parseFloat(this.ageInput);
-    if (!(w > 0) || !(h > 0) || !(a > 0)) {
-      this.getUIContext().getPromptAction().showToast({ message: '请填写有效的体重、身高和年龄' });
+    /**
+     * 体征校验走 Validators，不在这里自己 parseFloat。
+     *
+     * 原来只查「大于零」，没有上限、也不查格式：
+     * 体重填 9999、年龄填 0.5 都能存进去，
+     * 而 BMR/TDEE 直接拿这几个数推导目标 —— 异常值会一路算到热量目标上。
+     * 校验规则统一在 common/Validators.ets（规则只应有一处）。
+     */
+    const wP = validateBodyWeight(this.weightInput);
+    if (!wP.ok) {
+      this.getUIContext().getPromptAction().showToast({ message: wP.message });
       return;
     }
+    const hP = validateBodyHeight(this.heightInput);
+    if (!hP.ok) {
+      this.getUIContext().getPromptAction().showToast({ message: hP.message });
+      return;
+    }
+    const aP = validateBodyAge(this.ageInput);
+    if (!aP.ok) {
+      this.getUIContext().getPromptAction().showToast({ message: aP.message });
+      return;
+    }
+    const w = wP.value;
+    const h = hP.value;
+    const a = aP.value;
     if (this.sexIndex < 0 || this.activityIndex < 0 || this.goalIndex < 0) {
       this.getUIContext().getPromptAction().showToast({ message: '请完成性别、活动量和目标选择' });
       return;
     }
-    const bfText = this.bodyFatInput.trim();
-    let bf: number | null = null;
-    if (bfText.length > 0) {
-      const bfPct = parseFloat(bfText);
-      if (isNaN(bfPct) || bfPct <= 0 || bfPct >= 70) {
-        this.getUIContext().getPromptAction().showToast({ message: '体脂率需在 0~70 之间，或留空' });
-        return;
-      }
-      bf = bfPct / 100;
+    const bfP = validateBodyFat(this.bodyFatInput);
+    if (!bfP.ok) {
+      this.getUIContext().getPromptAction().showToast({ message: bfP.message });
+      return;
     }
+    const bfText = this.bodyFatInput.trim();
+    const bf: number | null = bfText.length > 0 ? bfP.value / 100 : null;
 
     const profile = new BodyProfile(
       w, h, a,
@@ -798,6 +966,21 @@ export struct ProfilePage {
           .alignItems(HorizontalAlign.Start)
           .width('100%')
 
+          // 宏量目标的只读摘要：真正的表单在「我的 → 修改宏量」里
+          Column({ space: space.xs }) {
+            Text('宏量目标（蛋白 / 碳水 / 脂肪）')
+              .fontSize(fontSize.secondary)
+              .fontColor(color.textSecondary)
+            Text(this.macroSummary.length > 0 ? this.macroSummary : '补全体征档案后自动推导')
+              .fontSize(fontSize.body)
+              .fontColor(color.text)
+            Text(this.macroAuto ? '当前按体征自动推导' : '当前为手动设置')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+
           Button('保存目标')
             .width('100%')
             .height(layout.buttonHeight)
@@ -885,6 +1068,9 @@ export struct ProfilePage {
           .padding({ top: space.sm, bottom: space.sm })
           .onClick(() => {
             this.onboardingVisible = true;
+            this.onboardingOverlayId = OverlayBackHandler.push(() => {
+              this.closeOnboarding();
+            });
           })
         }
         .width('100%')
@@ -1074,6 +1260,163 @@ export struct ProfilePage {
       .backgroundColor(color.bg)
       .linearGradient(pageGradient())
 
+      if (this.macroPanelVisible) {
+        /**
+         * 用 Stack 而不是 Column 装「滚动内容 + 关闭按钮」：
+         * Column 里第一个子节点高度 100% 会把后面的兄弟节点顶到屏幕外 ——
+         * 关闭按钮就永远看不见（用户只能靠返回键出去）。
+         */
+        Stack({ alignContent: Alignment.TopEnd }) {
+          Column() {
+            Scroll() {
+              Column({ space: space.md }) {
+                Text('宏量目标')
+                  .fontSize(fontSize.pageTitle)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(color.text)
+                  .width('100%')
+
+                Text('默认按体征档案自动推导（Atwater 系数反推）。也可以手动覆盖三项。')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+                  .width('100%')
+
+                Row() {
+                  Column({ space: 2 }) {
+                    Text('按体征自动推导')
+                      .fontSize(fontSize.body)
+                      .fontColor(color.text)
+                    Text('关闭后使用下方手动填写的数值')
+                      .fontSize(fontSize.caption)
+                      .fontColor(color.textHint)
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+
+                  Toggle({ type: ToggleType.Switch, isOn: this.macroAuto })
+                    .selectedColor(color.primary)
+                    .onChange((isOn: boolean) => {
+                      this.macroAuto = isOn;
+                      if (isOn) {
+                        this.restoreAutoMacro();
+                      }
+                    })
+                }
+                .width('100%')
+
+                if (!this.macroAuto) {
+                  Column({ space: space.xs }) {
+                    Text('蛋白（g）')
+                      .fontSize(fontSize.secondary)
+                      .fontColor(color.textSecondary)
+                    TextInput({ text: this.macroProteinInput, placeholder: '如 120' })
+                      .type(InputType.Number)
+                      .height(layout.inputHeight)
+                      .fontSize(fontSize.body)
+                      .backgroundColor(color.surfaceMuted)
+                      .borderRadius(radius.medium)
+                      .onChange((value: string) => {
+                        this.macroProteinInput = value;
+                      })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+
+                  Column({ space: space.xs }) {
+                    Text('碳水（g）')
+                      .fontSize(fontSize.secondary)
+                      .fontColor(color.textSecondary)
+                    TextInput({ text: this.macroCarbsInput, placeholder: '如 180' })
+                      .type(InputType.Number)
+                      .height(layout.inputHeight)
+                      .fontSize(fontSize.body)
+                      .backgroundColor(color.surfaceMuted)
+                      .borderRadius(radius.medium)
+                      .onChange((value: string) => {
+                        this.macroCarbsInput = value;
+                      })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+
+                  Column({ space: space.xs }) {
+                    Text('脂肪（g）')
+                      .fontSize(fontSize.secondary)
+                      .fontColor(color.textSecondary)
+                    TextInput({ text: this.macroFatInput, placeholder: '如 60' })
+                      .type(InputType.Number)
+                      .height(layout.inputHeight)
+                      .fontSize(fontSize.body)
+                      .backgroundColor(color.surfaceMuted)
+                      .borderRadius(radius.medium)
+                      .onChange((value: string) => {
+                        this.macroFatInput = value;
+                      })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+
+                  Button('保存宏量目标')
+                    .width('100%')
+                    .height(layout.buttonHeight)
+                    .fontSize(fontSize.body)
+                    .fontColor(color.onPrimary)
+                    .backgroundColor(color.primary)
+                    .borderRadius(radius.large)
+                    .onClick(() => {
+                      this.saveMacroTarget();
+                    })
+
+                  Button('恢复自动推导')
+                    .width('100%')
+                    .height(layout.buttonHeight)
+                    .fontSize(fontSize.body)
+                    .fontColor(color.textSecondary)
+                    .backgroundColor(color.glassFill)
+                    .borderRadius(radius.large)
+                    .onClick(() => {
+                      this.restoreAutoMacro();
+                    })
+                }
+
+                Text(this.macroSummary.length > 0 ? `当前目标：${this.macroSummary}` : '')
+                  .fontSize(fontSize.caption)
+                  .fontColor(color.textHint)
+                  .width('100%')
+              }
+              .width('100%')
+              // 右侧多留一段：右上角那个「✕」是叠在内容之上的，
+              // 不留白的话正文会从按钮底下穿过去（截图上能看到）。
+              .padding({ left: layout.pagePadding, right: layout.pagePadding + 48, top: layout.pagePadding })
+              .alignItems(HorizontalAlign.Start)
+            }
+            .width('100%')
+            .height('100%')
+            .scrollBar(BarState.Off)
+            .align(Alignment.Top)
+          }
+          .width('100%')
+          .height('100%')
+          .backgroundColor(color.bg)
+          .linearGradient(pageGradient())
+
+          // 关闭按钮与滚动内容**平级**（Stack 叠在一起），
+          // 放进 Column 里会被 100% 高的 Scroll 顶到屏幕外。
+          Button('✕')
+            .width(44)
+            .height(44)
+            .fontSize(20)
+            .fontColor(color.text)
+            .backgroundColor(Color.Transparent)
+            .margin({ top: 46, right: 16 })
+            .onClick(() => {
+              this.closeMacroPanel();
+            })
+        }
+        .width('100%')
+        .height('100%')
+      }
+
       if (this.csVisible) {
         Stack({ alignContent: Alignment.TopStart }) {
           ComingSoonPage()
@@ -1086,7 +1429,7 @@ export struct ProfilePage {
             .backgroundColor(Color.Transparent)
             .margin({ top: 46, left: 16 })
             .onClick(() => {
-              this.csVisible = false;
+              this.closeComingSoon();
             })
         }
         .width('100%')
@@ -1100,7 +1443,7 @@ export struct ProfilePage {
         Stack({ alignContent: Alignment.TopEnd }) {
           OnboardingPage({
             onDone: () => {
-              this.onboardingVisible = false;
+              this.closeOnboarding();
               // 引导改写了体征档案，重新读一遍把界面同步过来
               this.loadSettings();
               this.loadBodyProfile();
@@ -1115,7 +1458,7 @@ export struct ProfilePage {
             .backgroundColor(Color.Transparent)
             .margin({ top: 46, right: 16 })
             .onClick(() => {
-              this.onboardingVisible = false;
+              this.closeOnboarding();
             })
         }
         .width('100%')

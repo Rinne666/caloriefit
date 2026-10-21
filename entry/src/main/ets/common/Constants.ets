@@ -52,6 +52,8 @@ export interface Limits {
   bodyAgeMax: number;
   /** 体征档案：体脂率 % 上限（不含该值本身） */
   bodyFatMax: number;
+  /** 宏量目标：蛋白 / 碳水 / 脂肪 g 的上限 */
+  macroGramsMax: number;
 }
 
 export const LIMITS: Limits = {
@@ -68,7 +70,8 @@ export const LIMITS: Limits = {
   bodyWeightMax: 300,
   bodyHeightMax: 250,
   bodyAgeMax: 120,
-  bodyFatMax: 70
+  bodyFatMax: 70,
+  macroGramsMax: 1000
 };
 
 export const KIT_NAME = 'CalorieFit';

@@ -4,6 +4,7 @@ import { PrivacyConsentService } from '../services/PrivacyConsentService';
 import { PrivacyPolicyContent } from '../components/PrivacyPolicyContent';
 import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { Compliance } from '../common/Compliance';
+import { OverlayBackHandler } from '../common/OverlayBackHandler';
 
 @Component
 export struct PrivacyConsentPage {
@@ -13,20 +14,39 @@ export struct PrivacyConsentPage {
   @State private healthAccepted: boolean = false;
   @State private saving: boolean = false;
   @State private showPolicy: boolean = false;
+  /** 政策浮层在返回键登记表里的 id（-1 = 没登记） */
+  private policyOverlayId: number = -1;
 
   /**
    * 政策是**页内浮层**（showPolicy），不是 NavDestination。
    * 不接管返回键的话，用户在政策页按返回会直接**退出整个应用**，
    * 而不是回到同意页 —— 同意流程被打断，用户得重新冷启动。
    *
-   * 返回 true 表示"已处理"，系统不再往下传。
+   * 系统返回键只派发给 @Entry 组件（Index.ets），
+   * 所以这个浮层把「怎么关自己」登记到 OverlayBackHandler，由 Index 统一处理。
+   * （本页里的 onBackPress 对非 @Entry 组件不生效，保留只作兜底。）
    */
   onBackPress(): boolean {
     if (this.showPolicy) {
-      this.showPolicy = false;
+      this.closePolicy();
       return true;
     }
     return false;
+  }
+
+  private openPolicy(): void {
+    this.showPolicy = true;
+    this.policyOverlayId = OverlayBackHandler.push(() => {
+      this.closePolicy();
+    });
+  }
+
+  private closePolicy(): void {
+    this.showPolicy = false;
+    if (this.policyOverlayId >= 0) {
+      OverlayBackHandler.remove(this.policyOverlayId);
+      this.policyOverlayId = -1;
+    }
   }
 
   private async acceptAndContinue(): Promise<void> {
@@ -94,7 +114,7 @@ export struct PrivacyConsentPage {
             .fontSize(30)
             .fontColor(color.text)
             .backgroundColor(Color.Transparent)
-            .onClick(() => this.showPolicy = false)
+            .onClick(() => this.closePolicy())
           Text('隐私政策')
             .fontSize(fontSize.sectionTitle)
             .fontWeight(FontWeight.Bold)
@@ -139,7 +159,7 @@ export struct PrivacyConsentPage {
               .fontColor(color.primary)
               .backgroundColor(color.primaryLight)
               .borderRadius(radius.medium)
-              .onClick(() => this.showPolicy = true)
+              .onClick(() => this.openPolicy())
 
             Column({ space: space.md }) {
               Text('会在本机处理')

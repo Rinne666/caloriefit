@@ -8,33 +8,14 @@ import { AppDialogService } from '../services/AppDialogService';
 import { AiConfig } from '../models/AiConfig';
 import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { AiDefaults } from '../common/AiConstants';
+import { AiUrlPolicy } from '../common/AiUrlPolicy';
 
 /**
- * Base URL 校验：仅允许 HTTPS 且 host 属于隐私政策已声明的服务方域名。
- * opencsg.com —— OpenCSG 模型网关（默认，OpenAI 兼容）
- * dashscope.aliyuncs.com / *.maas.aliyuncs.com —— 阿里云百炼（备用）
- * 放开白名单等于把 App 变成任意地址的通用客户端，属于产品与合规决策，不在此处擅自放开。
+ * Base URL 校验已移到 common/AiUrlPolicy.ets（可单测）。
+ *
+ * 原来的实现在这里用字符串 split 取 host，能被 `https://opencsg.com:443@example.invalid/v1`
+ * 这种 userinfo 写法骗过 —— 详见 AiUrlPolicy 的说明。
  */
-const ALLOWED_BASE_URL_HOSTS: string[] = [
-  'opencsg.com',
-  'dashscope.aliyuncs.com',
-  'maas.aliyuncs.com'
-];
-
-function validateBaseUrl(input: string): boolean {
-  const trimmed = input.trim();
-  if (!trimmed.startsWith('https://')) {
-    return false;
-  }
-  try {
-    const host = trimmed.replace('https://', '').split('/')[0].split(':')[0].toLowerCase();
-    return ALLOWED_BASE_URL_HOSTS.some((allowed: string) => {
-      return host === allowed || host.endsWith(`.${allowed}`);
-    });
-  } catch (e) {
-    return false;
-  }
-}
 
 @Component
 export struct AiSettingsPage {
@@ -71,7 +52,7 @@ export struct AiSettingsPage {
       AppDialogService.toast('模型名称不能为空');
       return;
     }
-    if (!validateBaseUrl(baseUrl)) {
+    if (!AiUrlPolicy.isAllowedBaseUrl(baseUrl)) {
       AppDialogService.toast('Base URL 必须是 https 且属于已声明的服务方域名');
       return;
     }

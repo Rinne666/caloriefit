@@ -122,6 +122,19 @@ export class FoodRepository {
     const predicates = new relationalStore.RdbPredicates(TABLE);
     predicates.equalTo('id', id);
     await store.update(bucket, predicates);
+    // 换了贴纸文件时，旧文件可能变成孤儿 —— 但要先确认没有别的记录还在用它。
+    const previous = await FoodRepository.getById(id);
+    if (previous !== null && previous.stickerPath !== null &&
+      previous.stickerPath !== input.stickerPath) {
+      try {
+        const refs = await FoodRepository.countStickerReferences(previous.stickerPath);
+        if (refs === 0) {
+          await StickerCutoutService.remove(previous.stickerPath);
+        }
+      } catch (_e) {
+        // 计数失败就不删：残留文件只是占点空间，误删会让还在用的贴纸变默认图。
+      }
+    }
   }
 
   static async delete(id: number): Promise<void> {
@@ -141,8 +154,44 @@ export class FoodRepository {
       // 表还没建（V7 之前的老库）时忽略，不影响删除记录本身
     }
     if (existing !== null && existing.stickerPath !== null) {
-      await StickerCutoutService.remove(existing.stickerPath);
+      // 引用计数：复制一条记录时副本与原记录**共用同一个贴纸文件**，
+      // 删掉任意一条都不能把文件带走 —— 否则原记录的贴纸会变成默认图。
+      // 只有最后一个引用消失时，文件才真正成为孤儿，这时才删。
+      let refs = 0;
+      try {
+        refs = await FoodRepository.countStickerReferences(existing.stickerPath);
+      } catch (_e) {
+        // 计数失败时保守处理：宁可留下一个孤儿文件，也不要误删还在用的贴纸。
+        refs = 1;
+      }
+      if (refs === 0) {
+        await StickerCutoutService.remove(existing.stickerPath);
+      }
     }
+  }
+
+  /**
+   * 还有多少条饮食记录在用这个贴纸文件。
+   *
+   * 复制记录（黑板「复制到今天」）会让两条记录指向同一个 PNG，
+   * 删除时的判断依据就是这里的计数。
+   */
+  static async countStickerReferences(relPath: string): Promise<number> {
+    if (relPath.length === 0) {
+      return 0;
+    }
+    const store = await Database.ensure();
+    const resultSet = await store.querySql(
+      'SELECT COUNT(*) AS cnt FROM food_log WHERE sticker_path = ?', [relPath]);
+    let count = 0;
+    try {
+      if (resultSet.goToNextRow()) {
+        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+      }
+    } finally {
+      resultSet.close();
+    }
+    return count;
   }
 
   /**

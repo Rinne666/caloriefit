@@ -19,6 +19,22 @@ import {
 } from '../models/Calculation';
 import { CalorieEngine } from '../services/CalorieEngine';
 
+/**
+ * 宏量目标状态。
+ *
+ * 界面要展示的完整信息：当前是自动还是手动、库里存的手动值、生效中的目标。
+ */
+export class MacroTargetState {
+  /** true = 按体征自动推导；false = 手动覆盖 */
+  auto: boolean = true;
+  /** 库中存的手动值（自动模式下通常为 null） */
+  storedProteinG: number | null = null;
+  storedCarbsG: number | null = null;
+  storedFatG: number | null = null;
+  /** 当前生效的目标（自动模式为推导值，手动模式为库里的值） */
+  effective: MacroTarget | null = null;
+}
+
 export class ProfileRepository {
 
   /* ---------- 体征档案 ---------- */
@@ -134,5 +150,45 @@ export class ProfileRepository {
     } catch (e) {
       return false;
     }
+  }
+
+  /**
+   * 读宏量目标的**完整状态**。
+   *
+   * `getMacroTarget()` 只给「当前生效的值」，界面还需要知道：
+   *   · 现在是自动推导还是手动覆盖（决定表单要不要展开输入框）；
+   *   · 库里存的手动值是多少（切回自动前要先显示出来）。
+   * 所以单独给一个状态对象，别让界面去猜。
+   */
+  static async getMacroTargetState(): Promise<MacroTargetState> {
+    const state = new MacroTargetState();
+    try {
+      const store = Database.getStore();
+      const rs = await store.querySql(SQL_SELECT_MACRO_TARGET);
+      try {
+        const hasRow = rs.goToFirstRow();
+        state.auto = !hasRow ? true : rs.getDouble(rs.getColumnIndex('target_auto')) === 1;
+        if (hasRow) {
+          const p = rs.getColumnIndex('target_protein_g');
+          const c = rs.getColumnIndex('target_carbs_g');
+          const f = rs.getColumnIndex('target_fat_g');
+          if (!rs.isColumnNull(p)) {
+            state.storedProteinG = rs.getDouble(p);
+          }
+          if (!rs.isColumnNull(c)) {
+            state.storedCarbsG = rs.getDouble(c);
+          }
+          if (!rs.isColumnNull(f)) {
+            state.storedFatG = rs.getDouble(f);
+          }
+        }
+      } finally {
+        rs.close();
+      }
+    } catch (e) {
+      // 读不到就按「自动模式、没有手动值」处理
+    }
+    state.effective = await ProfileRepository.getMacroTarget();
+    return state;
   }
 }

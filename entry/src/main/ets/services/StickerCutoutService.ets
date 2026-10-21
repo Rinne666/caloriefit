@@ -335,6 +335,40 @@ export class StickerCutoutService {
     return `${ctx.filesDir}/${relPath}`;
   }
 
+  /**
+   * 删掉本 App 生成的**全部**图片文件：贴纸目录 + 分享海报目录。
+   *
+   * 「删除全部健康数据」只清数据库是不够的：
+   *   · 贴纸 PNG 是用户照片抠出来的图，属于用户的照片衍生数据；
+   *   · 分享海报里带着当天的饮食内容和便签碎碎念，更不能留在沙箱里。
+   *
+   * 只删本 App 自己建的这两个目录，不碰别的沙箱内容。
+   * 删不掉不抛错：文件残留不该让整条「删除全部数据」流程失败，
+   * 但调用方要能知道有残留 —— 所以这里返回失败的目录名。
+   */
+  static async clearGeneratedFiles(): Promise<string[]> {
+    const failed: string[] = [];
+    const ctx = Database.getAppContext();
+    if (ctx === null) {
+      return failed;
+    }
+    const dirs: string[] = [
+      `${ctx.filesDir}/${StickerStore.DIR}`,
+      `${ctx.filesDir}/share`
+    ];
+    for (let i = 0; i < dirs.length; i++) {
+      const dir = dirs[i];
+      try {
+        if (fileIo.accessSync(dir)) {
+          await fileIo.rmdir(dir);
+        }
+      } catch (e) {
+        failed.push(dir);
+      }
+    }
+    return failed;
+  }
+
   private static async ensureDir(): Promise<void> {
     const dir = StickerCutoutService.absolutePath(StickerStore.DIR);
     if (!fileIo.accessSync(dir)) {

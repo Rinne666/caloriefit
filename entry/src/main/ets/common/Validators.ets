@@ -245,3 +245,26 @@ export function validateActivityKcalGoal(input: string): ParseResult {
   }
   return pass(p.value);
 }
+
+// ---------- 宏量目标 ----------
+
+/**
+ * 宏量目标（蛋白 / 碳水 / 脂肪，g）。
+ *
+ * 手动模式下三项都必须能填出合法数字：填不出来就没法算当日达成率。
+ * 上限用 LIMITS.macroGramsMax —— 没有上限的话，
+ * 一个 999999 的输入会让进度页的比例条彻底失真。
+ */
+export function validateMacroGrams(input: string, label: string): ParseResult {
+  const p = parseNumber(input);
+  if (!p.ok) {
+    return fail(`${label}需为有效数字`);
+  }
+  if (!hasAtMostOneDecimal(input)) {
+    return fail(`${label}最多一位小数`);
+  }
+  if (p.value < 0 || p.value > LIMITS.macroGramsMax) {
+    return fail(`${label}需在 0-${LIMITS.macroGramsMax}g 之间`);
+  }
+  return pass(p.value);
+}

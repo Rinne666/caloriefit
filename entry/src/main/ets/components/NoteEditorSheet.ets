@@ -341,7 +341,7 @@ export struct NoteEditorSheet {
                 this.onCopy(this.node, this.todayKey());
               }
             })
-          Button('删除')
+          Button(this.isSticker() ? '删除记录' : '删除')
             .fontSize(12)
             .height(34)
             .layoutWeight(1)
@@ -355,6 +355,16 @@ export struct NoteEditorSheet {
         }
         .width('100%')
         .margin({ top: 16 })
+
+        if (this.isSticker()) {
+          // 贴纸节点是饮食记录的投影：删它等于删掉那条记录。
+          // 按钮上写清楚，避免用户以为只是摘掉板上的贴纸。
+          Text('删除会同时移除这条饮食记录与今日摄入里的热量，删除前会再确认一次。')
+            .fontSize(10)
+            .fontColor('#A08A55')
+            .width('100%')
+            .margin({ top: 6 })
+        }
 
         Row({ space: 8 }) {
           Button('关闭')

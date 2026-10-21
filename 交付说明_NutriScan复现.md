@@ -1814,3 +1814,266 @@ UI 树里查不到「今日」这三个字了（这与读屏无关，uitest 取�
   换机型板面宽度不同会把贴纸挤到边上；渲染时做了一次夹取兜底，
   但不会改库里的值 —— 换回宽屏时贴纸会回到原位。
 - **旋转/缩放的吸附**：方案提到「拖拽磁吸」，本轮只做了边界夹取，没做网格吸附。
+
+## 18. 模拟器实测缺陷修复轮（2026-10-21 晚）
+
+§17 交付后，用户在**当前模拟器上实跑调试**（对照源码提交 `2a024b0`），
+复现了 12 个运行问题，并给出源码级风险 5 项。
+本节逐条记录**根因、修法与验证**，并如实列出未修与未验证的部分。
+
+> 调试报告原文在 `work/app-debug-20261021/调试报告.md`（本地目录，不入库），
+> 证据截图在同目录的 `evidence/`。
+> 本节只写**已经在代码里改掉并验证过**的内容。
+
+### 18.1 三个 P1：先修这三个
+
+#### 18.1.1 确认弹窗的「确认」按钮点了没反应（P1，影响面最大）
+
+**根因**：`services/AppDialogService.ets` 的通用确认封装判的是 `action === 1`。
+但 `@pura/harmony-dialog` 的 `onAction` 约定是：
+
+- `action < 0` → 按钮的 `DialogAction` 枚举值；
+- `action >= 0` → 选项索引（仅选择型弹窗）。
+
+确认按钮（`secondaryButton`）回调的是 `DialogAction.TWO = -2`，
+取消按钮（`primaryButton`）回调 `DialogAction.ONE = -1`。
+判 `1` 永远不成立 —— **所有**走这个封装的确认框都点不动。
+
+**影响面**（报告实测 + 代码核对）：编辑页删记录、清除 API Key、退出登录、
+缺 Key 时的「去设置」—— 全部走同一个封装，全部失效。
+
+**修法**：改用依赖导出的 `DialogAction.SURE`，不写魔法数字。
+
+```ts
+import { DialogHelper, DialogAction, LoadingOptions, AlertOptions } from '@pura/harmony-dialog';
+// …
+onAction: (action: number, dialogId: string) => {
+  if (action === DialogAction.SURE) {
+    onConfirm();
+  }
+}
+```
+
+#### 18.1.2 删掉复制记录，原记录的贴纸变成默认图（P1，数据丢失）
+
+**根因**：黑板「复制到今天」时，`BoardRepository.copyToDate()` 给副本
+**赋了同一个 `sticker_path`**；而 `FoodRepository.delete()` 删任意一条时
+直接 unlink 那个文件，没有检查还有没有别的记录在用它。
+
+**修法**：给贴纸文件加**引用计数**。
+
+- `FoodRepository.countStickerReferences(relPath)`：数还有多少条记录在用这个文件；
+- `FoodRepository.delete()`：删行之后再数，**引用归零**才真正删文件；
+- 计数失败时保守处理（按「还有人用」处理）—— 宁可留一个孤儿文件，
+  也不能误删还在用的贴纸；
+- `FoodRepository.update()`：换了贴纸文件时，旧文件同样按引用计数回收。
+
+为什么不改成「复制时另存一份 PNG」：引用计数**同时保护修复前就已经复制过的数据**，
+存量库里共用同一个文件的记录也能被正确处理；另存一份只对未来的复制有效。
+
+#### 18.1.3 进度页不响应新增记录（P1）
+
+**根因**：`pages/ProgressPage.ets` 只监听 `selectedDate`。
+写库的页面（餐食编辑页、全部餐食页）广播的是 `refreshTick`，这一页没订阅；
+也没有「切回 Tab 时刷新」的逻辑。结果：今日页立刻显示 100 kcal，
+进度页还是日均 0、连续 0 天，**必须手动切一次统计范围**才恢复。
+
+**修法**：两条路都补上。
+
+1. 订阅 `refreshTick`（写库广播）；
+2. 新增 `tabTick`：底 Tab 切换时由 `pages/Index.ets` 广播，
+   进度页订阅后重载 —— 覆盖「数据在别处变了、切回来才发现」的场景。
+
+### 18.2 三项 P1 源码风险
+
+#### 18.2.1 AI 地址白名单可被 userinfo 绕过
+
+**根因**：`pages/AiSettingsPage.ets` 用字符串切分取 host：
+
+```ts
+const host = trimmed.replace('https://', '').split('/')[0].split(':')[0].toLowerCase();
+```
+
+于是 `https://opencsg.com:443@example.invalid/v1` 切出 host = `opencsg.com` → **通过白名单**，
+但标准 URL 解析的 hostname 是 `example.invalid`，请求实际发到别处。
+只要在已声明域名后加一段 `:xxx@`，就能把 App 变成任意地址的通用客户端，
+绕过「只连隐私政策已披露的服务方」这条约束。
+
+**修法**：新增 `common/AiUrlPolicy.ets`，用系统的 `url.URL`（`@kit.ArkTS`）做标准解析，
+并**显式拒绝 userinfo**（`user:pass@host` —— 主机名会骗过人，一律拒绝）。
+规则：https + 无凭证 + hostname 命中白名单本身或其子域。
+校验逻辑抽成独立模块，正是为了能单测。
+
+#### 18.2.2 「删除全部健康数据」没有清理生成的图片文件
+
+**根因**：`Database.clearAllUserData()` 只清数据库、偏好与密钥，
+`filesDir/stickers` 与 `filesDir/share` 原封不动。
+分享海报里带着当天的饮食内容和便签碎碎念 —— 那是**已删除数据的内容**。
+
+**修法**：`StickerCutoutService.clearGeneratedFiles()` 递归删掉
+`stickers/` 与 `share/` 两个目录（只删本 App 自己建的），
+`PersonalDataService.deleteAllLocalData()` 调用它；删不掉时**如实计入失败项**，
+不假装删除成功。
+
+#### 18.2.3 撤回健康信息同意后，计步仍可能继续写入
+
+**根因**：`EntryAbility` 冷启动直接订阅计步传感器；
+`PrivacyConsentService.revoke()` 只删同意记录，不碰传感器；
+`StepSensorService` 读写时也不看同意态。
+系统权限是用户单独授予的，撤回同意后它**依然在**，于是健康数据还在增长。
+
+**修法**（三层）：
+
+1. **撤回前先停采集**：`PrivacyConsentService.revoke()` 第一件事就是
+   `StepSensorService.stop()`（退订、停轮询、停落库定时器）；
+   `PersonalDataService.deleteAllLocalData()` 也在清数据**之前**先停 ——
+   顺序反过来的话，删除过程中传感器还在上报，会把步数又写回库。
+2. **订阅前看同意态**：`StepSensorService.start()` 同意已撤回就不订阅。
+3. **落库前再看一次**：`flush()` 每次写库前校验同意态，
+   撤回后到达的读数直接丢弃。
+
+同意态判定抽到 `services/ConsentState.ets`：`PrivacyConsentService` 与
+`StepSensorService` 都只依赖它，依赖是单向的，不会成环。
+
+### 18.3 九个 P2 已复现问题
+
+| # | 问题 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| 1 | 黑板「复制到今天」后不刷新 | `copyNode` 只弹 toast，不重载节点、不广播 | 复制后当场 `loadNodes` + `refreshSummary`，并广播 `refreshTick` |
+| 2 | 抽屉改餐次后不持久 | 只更新 `board_node`；加载时 `resolveFoodStickers()` 又从 `food_log` 覆盖回来 | 餐次变化时同时写 `food_log.meal_type`（`FoodRepository.updateMealType`），与分栏拖拽走同一条路径 |
+| 3 | 网格视图分享必报「生成失败：undefined」 | 快照 id `boardCanvasShot` 只挂在自由画布上，网格视图里根本没这个节点 | 快照目标改为**两种视图共用的容器**；异常文案兜底（拿不到 message 时给「未知错误」，不再显示 undefined） |
+| 4 | Report/分享预览按返回键退桌面 | 覆盖层不是 NavDestination，收不到系统返回键 | 分享预览改成**独立路由页**；页内浮层统一登记到 `OverlayBackHandler`，由 `@Entry` 的 `Index.onBackPress()` 统一接管 |
+| 5 | 浅色主题下未选中日期几乎不可见 | 未选中日期写死粉笔白 `#F4F1E4`，落在浅色页面背景 `#EDF1FA` 上，对比约 1.001:1 | 日期条在板面**外面**，改用应用主题文本 token（`color.text` / `color.textHint`），粉笔色只留给板面内部 |
+| 6 | 四个粉笔分栏标题与分隔线重叠 | 四个 Column 直接塞进同一个 Stack（默认 TopStart 对齐），bounds 完全相同 | 改用 `Row` 横排，列宽与 `mealColumnFor()` 的四等分一致 |
+| 7 | 分享预览高度失控、关闭按钮被挤出 | 图片只有宽度没有高度约束；预览放在黑板组件的 Stack 里，FAB 与底栏还在它上面 | 预览改为独立路由页（全屏、底栏在其下），图片限高 `maxHeight`，关闭按钮固定在底部 |
+| 8 | 黑板「删除」直接删掉饮食记录 | 抽屉直接调删除回调，没有确认 | 贴纸节点的删除按钮改名为「删除记录」并加一行后果说明；删除前弹确认（说明会一并移除多少 kcal），便签/示例只删板面节点 |
+| 9 | 「修改宏量」标「已实现」却没有表单 | `openYouEntry('modify_macros')` 只弹 toast；`ProfileRepository.saveMacroTarget()` 没有任何页面调用方 | 接上真实表单：自动/手动开关、蛋白/碳水/脂肪输入、保存与「恢复自动推导」；`每日目标设置` 卡片里加只读摘要。仓储侧补 `getMacroTargetState()` 返回自动/手动状态 |
+
+顺带修掉的两项源码风险：
+
+- **身体档案保存缺上限与格式校验**（`ProfilePage.saveBodyProfile` 原来只查「大于零」，
+  体重 9999、年龄 0.5 都能存进去，而 BMR/TDEE 直接拿这几个数推导目标）：
+  改为统一走 `common/Validators.ets` 的 `validateBodyWeight/Height/Age`。
+- **宏量目标没有上限**：新增 `validateMacroGrams` 与 `LIMITS.macroGramsMax`（1000g）。
+
+### 18.4 返回键的统一处理
+
+系统返回键**只派发给 `@Entry` 组件**（本项目是 `pages/Index.ets`）。
+页内浮层（Report 占位、分享预览、未实现说明、重看引导、隐私政策）自己收不到，
+用户按返回会**直接退出应用** —— 浮层还开着，人却回到了桌面。
+
+新增 `common/OverlayBackHandler.ets`：浮层把「怎么关自己」登记进来，
+`Index.onBackPress()` 按登记顺序关掉最上面那个，返回 `true` 表示已处理。
+登记用 id 而不是函数引用（ArkTS 每次求值都会产生新的闭包实例，按引用比对不可靠）。
+
+> 之前 `PrivacyConsentPage` 在组件里写了 `onBackPress()`，
+> 但组件不是 `@Entry`，拿不到派发 —— 这类浮层必须由 `@Entry` 统一接管。
+> 该页现在也登记到 `OverlayBackHandler`，行为变可靠。
+
+### 18.5 本轮新增/改动的文件
+
+| 文件 | 改动 |
+| --- | --- |
+| `services/AppDialogService.ets` | 确认回调改用 `DialogAction.SURE` |
+| `repositories/FoodRepository.ets` | 贴纸引用计数；`update` 的旧文件回收 |
+| `pages/ProgressPage.ets` | 订阅 `refreshTick` + `tabTick`；Report/未实现浮层登记返回键 |
+| `pages/Index.ets` | `onBackPress()` 统一接管返回键；切 Tab 广播 `tabTick` |
+| `common/OverlayBackHandler.ets` | **新增**：浮层返回键登记表 |
+| `common/AiUrlPolicy.ets` | **新增**：AI 地址白名单（标准 URL 解析 + 拒绝 userinfo） |
+| `services/ConsentState.ets` | **新增**：同意态同步判定（供两个服务共用，避免成环） |
+| `services/PrivacyConsentService.ets` | 撤回同意前先停计步采集 |
+| `services/StepSensorService.ets` | 订阅前与落库前校验同意态 |
+| `services/StickerCutoutService.ets` | 新增 `clearGeneratedFiles()` |
+| `services/PersonalDataService.ets` | 删除全部数据时先停采集、再删生成文件 |
+| `components/BlackboardView.ets` | 复制/餐次/删除/分享/日期条/分栏线的修复 |
+| `components/NoteEditorSheet.ets` | 删除按钮改名 + 后果说明 |
+| `pages/SharePosterPage.ets` | **新增**：分享卡预览路由页 |
+| `components/SharePosterDialog.ets` | **删除**（被 SharePosterPage 取代） |
+| `repositories/ProfileRepository.ets` | 新增 `getMacroTargetState()` |
+| `pages/ProfilePage.ets` | 宏量目标表单；体征校验改走 Validators |
+| `common/Validators.ets` | 新增 `validateMacroGrams` |
+| `common/Constants.ets` | 新增 `LIMITS.macroGramsMax` |
+| `pages/PrivacyConsentPage.ets` | 政策浮层登记返回键 |
+| `pages/AiSettingsPage.ets` | 改用 `AiUrlPolicy` |
+| `entry/src/ohosTest/ets/test/FixRegression.test.ets` | **新增**：8 条单测 |
+| `entry/src/ohosTest/ets/test/List.test.ets` | 注册新测试套件 |
+
+### 18.6 验证结果
+
+- **设备端单测：73/73 PASS**（原有 65 条 + 新增 `entry/src/ohosTest/ets/test/FixRegression.test.ets` 8 条）。
+  新增 8 条覆盖：
+  ① AI 地址白名单：白名单域名与子域通过、`https://opencsg.com:443@example.invalid/v1`
+  这类 userinfo 写法被拒、http 与后缀伪装被拒；
+  ② 贴纸引用计数：删副本后原记录的贴纸文件仍在（引用数 2 → 1），
+  最后一个引用删除后文件才被回收（引用数 → 0）；
+  ③ 浮层返回键：后开的先关、关完交回系统；
+  ④ 输入校验：宏量与体征档案的上限与格式。
+- **UI 全量回归 `tools/verify_all.py`：14/14 PASS**（0 skipped、0 failed）。
+- **黑板画布专项 `tools/verify_board_canvas.py`：11/11 PASS**。
+  含「分栏线与餐次标题出现」「分享卡预览弹窗出现」两项 ——
+  截图 `tools/shots/bc_06_dividers.jpeg` 可见四个餐次标题分列四栏不再重叠，
+  `tools/shots/bc_07_poster.jpeg` 可见分享预览已是**全屏独立页**、
+  关闭按钮固定在底部可见。
+- **黑板专项 `tools/verify_blackboard.py`：15/15 PASS**（抠图 → 保存 → 黑板整条链路）。
+- **首启专项 `tools/verify_free_markers.py`：全部通过**。
+- **隐私运行时 `tools/verify_privacy_runtime.py`：全部通过**。
+- **本轮新增定向专项 `tools/verify_fix_round.py`：12/12 PASS**。
+  这个脚本专门验**别的脚本都盖不到、但正是本轮 P1 根因**的那条路：
+  ① 先访问进度页 → 回今日页新增记录 → 返回进度页，**不切统计范围**也要显示新值；
+  ② 黑板贴纸编辑抽屉点「删除记录」→ 弹确认框并说明后果；
+  ③ 点「**取消**」→ 记录还在（1240 不变）；
+  ④ 点「**删除**」→ 记录**真的被删掉**（1240 → 620）——
+     这条就是 P1-1 的直接证据：确认回调确实执行了；
+  ⑤ 「修改宏量」打开的是**真实表单**（有蛋白/碳水/脂肪与自动/手动开关）；
+  ⑥ 网格视图也能生成分享卡（之前必然报「生成失败：undefined」）。
+  证据截图：`tools/shots/fr_01_record.jpeg` ~ `fr_06_grid_share.jpeg`。
+
+本轮调试 HAP：`entry/build/default/outputs/default/entry-default-unsigned.hap`，
+3,405,836 字节，SHA-256 `d3ed4c714d4ef3075030cfe24fed1536348a270be2bc52b31bfb6897a122d39a`，
+21:15 构建（`clean` 后重新构建，构建日志含
+`Finished :entry:default@CompileArkTS... after 5 s 223 ms`，确认 ArkTS 真的编译了）。
+
+### 18.7 本轮**没有**改的（如实列出）
+
+调试报告里还有几类内容，这一轮**只修了缺陷，没有补功能**：
+
+1. **未实现的功能**（收藏餐食、问你自己、重复餐食、提醒、假期模式、自定义首页、
+   Readiness Score / NutriScore、Report 导出）—— 仍是 ComingSoon 占位，
+   本轮没有接后端也没有编算法。Report 仍只有占位页。
+2. **部分实现的功能**：
+   - 手帐分享卡**仍不导出到相册**（只做应用内预览 + 存沙箱），
+     理由见 §17.1（导出要 `WRITE_IMAGEVIDEO` 权限并同步改三处隐私披露）；
+   - 「复制到指定日期」仍只有「复制到今天」一个目标，**没有目标日期选择器**
+     （仓储层 `copyToDate(node, targetDate)` 已支持任意日期）；
+   - **新建独立便签**仍没有入口（只能编辑/复制已有示例便签）；
+   - **AI 饭搭子点评**仍只有示例便签里的固定文案，真实识别结果没有生成并写入该字段的链路；
+   - 华为账号仍缺 `client_id` 与签名配置，无法完成登录。
+3. **报告里提到但本轮判定为「口径问题」未动的**：
+   「本周」实际查询向前滚动 7 天、`avgKcal()` 除以有记录的天数而图表把无记录日期补零 ——
+   展示「记录日平均」还是「区间日均」属于产品口径决策，本轮**没有**改动，
+   标签、统计与图表三者目前仍不完全一致。
+4. **示例便签的来源标记**：示例心情便签仍以普通 `STICKY_NOTE` 存在，
+   有真实食物记录后它虽然不再显示（示例贴纸隐藏逻辑），但**数据仍留在库里**。
+   报告建议「给示例便签同等来源标记」，本轮未做。
+5. **「点按置顶也会触发分栏归餐」**：自由画布点按置顶会调 `persistTransform()`，
+   分栏开启时该函数会重算餐次 —— 也就是说「点一下贴纸」可能悄悄改了它归属的餐次。
+   报告把它列为源码路径风险。本轮**只修了同类问题的数据面**
+   （抽屉改餐次现在会真正写进 `food_log`），
+   但**没有**把「保存层级/位置」与「用户明确拖拽后归餐」拆开 —— 这仍是一个已知缺陷。
+6. **网格视图同一餐多条记录可能横向溢出**：`StructuredGrid` 仍用单个 `Row`
+   装整餐的记录，没有换行或横向滚动。记录变多时仍有横向溢出风险，本轮未改。
+
+### 18.8 验证边界（如实列出）
+
+- **计步与撤回同意的联动**：模拟器没有计步传感器硬件，
+  「撤回同意后停止采集」这条路径在模拟器上**只验证了代码路径可达**，
+  没有在真机上观察到传感器真的停下。真机验证需要 `ACTIVITY_MOTION` 已授权且有计步器。
+- **端侧分割**仍只在模拟器上验证了「不支持时干净降级」，
+  真机效果未验证（同 §17.7）。
+- **分享卡在超长画布下的表现**：本轮给预览图加了高度上限，
+  但**没有**用「一天十几条记录」的极端数据实测过画布长到什么程度、
+  预览缩到多小文字是否还读得出来。
+- **删除全部数据时清理生成文件**：本轮**没有**真的执行全量删除去检查沙箱残留 ——
+  那会清掉用户数据。代码路径已改，残留检查需要用户在自己的设备上确认。
+- **AI 地址白名单**：单测覆盖了 userinfo、http、后缀伪装等绕过手法，
+  但**没有**向任何非白名单地址发过真实请求。
