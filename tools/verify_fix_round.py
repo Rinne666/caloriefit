@@ -49,7 +49,7 @@ def texts():
     return ' '.join(n['text'] for n in V.dump())
 
 
-def goto_tab(label, tries=3):
+def goto_tab(label, tries=3, strict=True):
     """切到底栏 Tab，并**确认真的切过去了**。
 
     底栏没有文字（标签转成了 accessibilityText，不进 dumpLayout），
@@ -57,6 +57,10 @@ def goto_tab(label, tries=3):
     会把**底栏区域内的其它可点元素**也算进去（比如进度页最后一张卡
     恰好伸进底栏那条带子里），按下标点就会点错。
     改成直接按 TabBar 自身几何等分：Tabs 的页签本来就是等宽均分的。
+
+    strict=True 时要求**页面内独有的文案**可见才算切过去。
+    但目标页可能停在滚动位置上（marker 滚出可见区），
+    这时判成「没切过去」是假阴性 —— strict=False 时只要求点击已发出。
     """
     markers = TAB_MARKER.get(label, ())
     if label not in V.TAB_ORDER:
@@ -76,6 +80,8 @@ def goto_tab(label, tries=3):
         time.sleep(2.2)
         tl = texts()
         if any(m in tl for m in markers):
+            return True
+        if not strict:
             return True
     return False
 

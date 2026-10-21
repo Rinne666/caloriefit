@@ -95,13 +95,21 @@ export struct NoteEditorSheet {
     this.pinType = n.pinType;
   }
 
+  /**
+   * 是不是内置示例节点（示例贴纸或示例便签）。
+   *
+   * 示例节点的标题与内容是 App 自带的，不是用户写的 ——
+   * 打开抽屉时要说明清楚。
+   */
+  private isDemo(): boolean {
+    return this.node !== null &&
+      (this.node.nodeType === BoardNodeType.DEMO_STICKER ||
+        this.node.nodeType === BoardNodeType.DEMO_NOTE);
+  }
+
   /** 贴纸节点：食物字段归 food_log 管，这里只读 */
   private isSticker(): boolean {
     return this.node !== null && this.node.nodeType === BoardNodeType.FOOD_STICKER;
-  }
-
-  private isDemo(): boolean {
-    return this.node !== null && this.node.nodeType === BoardNodeType.DEMO_STICKER;
   }
 
   private parseNumber(text: string): number | null {
@@ -183,7 +191,7 @@ export struct NoteEditorSheet {
   build() {
     Scroll() {
       Column({ space: 4 }) {
-        Text(this.isSticker() ? '食物贴纸' : '心情便签')
+        Text(this.isSticker() ? '食物贴纸' : (this.isDemo() ? '示例便签' : '心情便签'))
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor('#4A3B1E')
@@ -191,6 +199,14 @@ export struct NoteEditorSheet {
 
         if (this.isSticker()) {
           Text('食物名称与营养数据来自餐食记录，改这里不会生效 —— 请到餐食编辑页修改。')
+            .fontSize(11)
+            .fontColor('#8A7742')
+            .width('100%')
+        }
+
+        if (this.isDemo()) {
+          // 示例便签要说清楚，别让用户以为那是自己写的
+          Text('这是内置示例便签，可以直接改成本你自己的内容。')
             .fontSize(11)
             .fontColor('#8A7742')
             .width('100%')

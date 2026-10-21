@@ -213,15 +213,25 @@ export struct BlackboardView {
 
   private async loadNodes(date: string): Promise<void> {
     try {
-      let nodes = await BoardRepository.getNodes(date);
-      this.nodes = nodes;
-      this.topZ = this.computeTopZ(nodes);
+      const loaded = await BoardRepository.getNodes(date);
+      /**
+       * 直接换成新数组，**靠 renderKey 让内容变了的贴纸重建**。
+       *
+       * 之前只用 id 做 key：id 不变 → `ForEach` 复用旧子组件 →
+       * 子组件还绑着旧对象 → 「顶部总热量已经是新值，贴纸还写着旧热量、旧餐次」
+       * （2026-10-21 用户实测复现，交付说明 §19 F05）。
+       * 现在 key 里带内容签名，内容一变 key 就变，组件重建、显示新值；
+       * 内容没变时 key 不变，组件仍然复用，拖拽中的状态不会丢。
+       */
+      this.nodes = loaded;
+      this.topZ = this.computeTopZ(loaded);
       // 这天还什么都没有 → 铺一套示例节点，让用户第一秒就能上手拖拽
-      if (nodes.length === 0) {
+      if (loaded.length === 0) {
         const created = await BoardRepository.seedDemo(date);
         if (created > 0) {
-          this.nodes = await BoardRepository.getNodes(date);
-          this.topZ = this.computeTopZ(this.nodes);
+          const seeded = await BoardRepository.getNodes(date);
+          this.nodes = seeded;
+          this.topZ = this.computeTopZ(seeded);
         }
       }
     } catch (_e) {
@@ -279,7 +289,17 @@ export struct BlackboardView {
 
   /* ------------------------------ 节点操作 ------------------------------ */
 
-  /** 点击置顶 */
+  /**
+   * 点击置顶。
+   *
+   * **只改层级，绝不碰餐次。**
+   * 之前这里调的是 `persistTransform()`，而 `persistTransform()` 在分栏开启时
+   * 会执行「贴纸落在哪一栏就归哪一餐」—— 于是**单击打开贴纸看一眼**
+   * 就会把这条饮食记录改写成别的餐次，而且已经落库了
+   * （2026-10-21 用户实测复现，交付说明 §19 F06）。
+   *
+   * 层级与餐次是两件事：层级是画布上的顺序，餐次是用户的数据。
+   */
   private bringToFront(id: number): void {
     const node = this.findNode(id);
     if (node === null) {
@@ -290,7 +310,7 @@ export struct BlackboardView {
     }
     this.topZ = this.topZ + 1;
     node.zIndex = this.topZ;
-    this.persistTransform(node);
+    this.saveTransform(node);
   }
 
   private findNode(id: number): BoardNodeModel | null {
@@ -308,13 +328,32 @@ export struct BlackboardView {
     this.sheetOpen = true;
   }
 
-  /** 变换结束：落库 */
+  /** 变换结束：落库（位置 / 缩放 / 旋转 / 层级） */
   private async persistTransform(node: BoardNodeModel): Promise<void> {
-    try {
-      await BoardRepository.saveTransform(node.id, node.x, node.y, node.scale, node.rotation, node.zIndex);
-    } catch (_e) {
-      // 落库失败只影响下次打开的位置，不打断当前操作
-    }
+    this.saveTransform(node);
+  }
+
+  /**
+   * 落库空间状态。
+   *
+   * 只写 board_node，**不碰饮食记录的餐次**。
+   */
+  private saveTransform(node: BoardNodeModel): void {
+    BoardRepository.saveTransform(node.id, node.x, node.y, node.scale, node.rotation, node.zIndex)
+      .catch(() => {
+        // 落库失败只影响下次打开的位置，不打断当前操作
+      });
+  }
+
+  /**
+   * **拖拽**结束：落库 + 按分栏同步餐次。
+   *
+   * 只有「用户明确把贴纸拖到别的栏」才允许改写这条记录归属的餐次，
+   * 而且要有 toast 明示改到了哪一餐。
+   * 单击查看、置顶、缩放、旋转都不走这里。
+   */
+  private async onDragFinished(node: BoardNodeModel): Promise<void> {
+    this.saveTransform(node);
     if (this.showDividers) {
       await this.syncMealByColumn(node);
     }
@@ -535,7 +574,8 @@ export struct BlackboardView {
       node.y = 8 + row * 160;
       node.scale = 1;
       node.rotation = (i % 2 === 0) ? -2 : 2;
-      this.persistTransform(node);
+      // 规整是**按餐次**排的，不该反过来改写餐次
+      this.saveTransform(node);
     }
     this.getUIContext().getPromptAction().showToast({ message: '已按餐次规整' });
   }
@@ -821,7 +861,8 @@ export struct BlackboardView {
   /** 节点内容 */
   @Builder
   NodeContent(node: BoardNodeModel) {
-    if (node.nodeType === BoardNodeType.STICKY_NOTE) {
+    if (node.nodeType === BoardNodeType.STICKY_NOTE ||
+      node.nodeType === BoardNodeType.DEMO_NOTE) {
       StickyNoteItem({
         title: node.title,
         kcal: node.calories,
@@ -834,7 +875,9 @@ export struct BlackboardView {
         paperStyle: node.paperStyle,
         pinType: node.pinType,
         noteWidth: NOTE_BOX_W,
-        noteHeight: NOTE_BOX_H
+        noteHeight: NOTE_BOX_H,
+        // 示例便签要标出来，别让用户以为那是自己写的
+        isDemo: node.nodeType === BoardNodeType.DEMO_NOTE
       })
     } else {
       FoodStickerItem({
@@ -878,12 +921,13 @@ export struct BlackboardView {
             onBringToFront: (id: number) => this.bringToFront(id),
             onOpenNode: (n: BoardNodeModel) => this.openNode(n),
             onTransformEnd: (n: BoardNodeModel) => this.persistTransform(n),
+            onDragFinished: (n: BoardNodeModel) => this.onDragFinished(n),
             onToggleFlip: (n: BoardNodeModel) => this.toggleFlip(n),
             content: () => {
               this.NodeContent(node)
             }
           })
-        }, (node: BoardNodeModel) => node.id.toString())
+        }, (node: BoardNodeModel) => node.renderKey())
       }
     }
     .width('100%')
@@ -891,74 +935,96 @@ export struct BlackboardView {
     .clip(true)
   }
 
-  /** 结构化网格视图：按餐次分组 */
+  /**
+   * 结构化网格视图：按餐次分组。
+   *
+   * ## 为什么用可换行的 Flex，而不是单个 Row
+   * 原来每一餐用一个 `Row` 装全部记录，**一行排到底**。
+   * 一餐超过画布宽度时，第 4 条及以后的记录被挤出可视范围 ——
+   * 界面没有任何横向滚动入口，用户根本看不到它们
+   * （2026-10-21 用户实测复现，交付说明 §19 F09）。
+   * 改成 `Flex + FlexWrap.Wrap`：每行放 3 个，放不下的自动换到下一行。
+   *
+   * ## 为什么不用嵌套的 Scroll
+   * 网格外面已经套了固定高度的 `Scroll`，内容比它高就被裁掉
+   * （分享预览图里能看到便签被切成两半）。
+   * 网格本身改成自然高度，让外层页面滚动 —— 内容不再被裁，
+   * 分享快照也能拍到完整内容。
+   */
   @Builder
   StructuredGrid() {
-    Scroll() {
-      Column({ space: 10 }) {
-        ForEach([0, 1, 2, 3], (meal: number) => {
-          Column({ space: 6 }) {
-            Text(MEAL_LABELS[meal])
-              .fontSize(12)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.inkColor())
-              .width('100%')
+    Column({ space: 10 }) {
+      ForEach([0, 1, 2, 3], (meal: number) => {
+        Column({ space: 6 }) {
+          Text(MEAL_LABELS[meal])
+            .fontSize(12)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.inkColor())
+            .width('100%')
 
-            if (this.nodesForMeal(meal).length === 0) {
-              Text('—')
-                .fontSize(11)
-                .fontColor(this.inkDimColor())
-                .width('100%')
-            } else {
-              Row({ space: 8 }) {
-                ForEach(this.nodesForMeal(meal), (node: BoardNodeModel) => {
-                  Column({ space: 3 }) {
-                    if (node.nodeType === BoardNodeType.STICKY_NOTE) {
-                      StickyNoteItem({
-                        title: node.title,
-                        kcal: node.calories,
-                        mealLabel: this.mealLabel(node.mealCategory),
-                        timeStr: node.timeStr,
-                        moodEmoji: node.moodEmoji,
-                        companionText: node.companionText,
-                        memoText: node.memoText,
-                        paperStyle: node.paperStyle,
-                        pinType: node.pinType,
-                        noteWidth: 132,
-                        noteHeight: 132
-                      })
-                    } else {
-                      FoodStickerItem({
-                        title: node.title,
-                        kcal: node.calories,
-                        mealLabel: this.mealLabel(node.mealCategory),
-                        stickerUri: node.stickerUri,
-                        moodEmoji: node.moodEmoji,
-                        memoSummary: node.memoText,
-                        flipped: node.isFlipped,
-                        paperStyle: node.paperStyle,
-                        pinType: node.pinType,
-                        stickerSize: 68,
-                        isDemo: node.nodeType === BoardNodeType.DEMO_STICKER
-                      })
-                    }
-                  }
-                  .onClick(() => this.openNode(node))
-                }, (node: BoardNodeModel) => node.id.toString())
-              }
+          if (this.nodesForMeal(meal).length === 0) {
+            Text('—')
+              .fontSize(11)
+              .fontColor(this.inkDimColor())
               .width('100%')
+          } else {
+            Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
+              ForEach(this.nodesForMeal(meal), (node: BoardNodeModel) => {
+                Column({ space: 3 }) {
+                  if (node.nodeType === BoardNodeType.STICKY_NOTE ||
+                    node.nodeType === BoardNodeType.DEMO_NOTE) {
+                    StickyNoteItem({
+                      title: node.title,
+                      kcal: node.calories,
+                      mealLabel: this.mealLabel(node.mealCategory),
+                      timeStr: node.timeStr,
+                      moodEmoji: node.moodEmoji,
+                      companionText: node.companionText,
+                      memoText: node.memoText,
+                      paperStyle: node.paperStyle,
+                      pinType: node.pinType,
+                      noteWidth: 132,
+                      noteHeight: 132,
+                      isDemo: node.nodeType === BoardNodeType.DEMO_NOTE
+                    })
+                  } else {
+                    FoodStickerItem({
+                      title: node.title,
+                      kcal: node.calories,
+                      mealLabel: this.mealLabel(node.mealCategory),
+                      stickerUri: node.stickerUri,
+                      moodEmoji: node.moodEmoji,
+                      memoSummary: node.memoText,
+                      proteinG: node.proteinGrams === null ? 0 : node.proteinGrams,
+                      carbsG: node.carbsGrams === null ? 0 : node.carbsGrams,
+                      fatG: node.fatGrams === null ? 0 : node.fatGrams,
+                      flipped: node.isFlipped,
+                      paperStyle: node.paperStyle,
+                      pinType: node.pinType,
+                      stickerSize: 68,
+                      isDemo: node.nodeType === BoardNodeType.DEMO_STICKER
+                    })
+                  }
+                }
+                .width(this.gridItemWidth())
+                .margin({ right: 6, bottom: 6 })
+                .onClick(() => this.openNode(node))
+              }, (node: BoardNodeModel) => node.renderKey())
             }
+            .width('100%')
           }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
-        })
-      }
-      .width('100%')
-      .padding({ bottom: 8 })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      })
     }
     .width('100%')
-    .height(this.canvasHeight())
-    .scrollBar(BarState.Off)
+    .padding({ bottom: 8 })
+  }
+
+  /** 网格里单个条目的宽度：一行放 3 个 */
+  private gridItemWidth(): number {
+    return Math.max(90, Math.floor((this.canvasWidth - 18) / 3));
   }
 
   /** 空态 */
@@ -1052,6 +1118,13 @@ export struct BlackboardView {
          * （componentSnapshot 找不到节点，抛出的错误连 message 都没有，
          *  界面上就显示成「生成失败：undefined」）。
          * 现在 id 挂在这个两种视图都会渲染的容器上，谁在都能截。
+         *
+         * ## 必须给它自己的底色
+         * `componentSnapshot` 截的是节点**自身**的绘制结果，
+         * 透明背景的节点截出来就是透明 PNG。放到预览页的米白底上，
+         * 粉笔色的餐次标题（`#C6CFC4`）就成了「浅灰字画在白底上」—— 几乎读不出来
+         * （2026-10-21 用户实测复现，交付说明 §19 F11）。
+         * 显式给板面底色，截出来的图才是「一块板子」。
          */
         Stack() {
           if (this.viewMode === BoardViewMode.FREE_CANVAS) {
@@ -1061,7 +1134,10 @@ export struct BlackboardView {
           }
         }
         .width('100%')
-        .height(this.canvasHeight())
+        // 自由画布是固定高度（贴纸自由摆放的区域）；
+        // 网格视图改成**自然高度**，内容不再被裁掉，分享快照也能拍到完整内容。
+        .height(this.viewMode === BoardViewMode.FREE_CANVAS ? this.canvasHeight() : 'auto')
+        .backgroundColor(boardThemeColors(this.theme).board)
         .id('boardCanvasShot')
         .onAreaChange((_old: Area, area: Area) => {
           const w = parseFloat(area.width.toString());

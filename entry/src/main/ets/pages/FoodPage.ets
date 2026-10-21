@@ -346,7 +346,7 @@ export struct FoodPage {
               } else {
                 ForEach(this.mealFoods(index), (log: FoodLog) => {
                   this.FoodRow(log)
-                }, (log: FoodLog) => log.id.toString())
+                }, (log: FoodLog) => log.renderKey())
               }
             }
             .width('100%')

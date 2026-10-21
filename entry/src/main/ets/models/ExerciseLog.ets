@@ -29,4 +29,14 @@ export class ExerciseLog {
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
+
+  /**
+   * 列表渲染用的 key。
+   *
+   * 理由与 FoodLog.renderKey() 一样：key 只用 id 的话，
+   * 编辑过的记录会复用旧组件、继续显示旧内容。
+   */
+  renderKey(): string {
+    return `${this.id}-${this.updatedAt}-${this.durationMinutes}-${this.caloriesBurned}-${this.type}`;
+  }
 }

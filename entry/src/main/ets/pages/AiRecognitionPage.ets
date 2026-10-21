@@ -82,6 +82,24 @@ export struct AiRecognitionPage {
   }
 
   /**
+   * 重新读一次演示模式。
+   *
+   * 演示模式是在**另一个页面**（AI 设置）里开关的。
+   * 用户从本页「去设置」→ 打开演示模式 → 返回本页时，
+   * 本页的 `demoMode` 还是进来时的旧值 —— 于是隐私提示仍写着
+   * 「照片将发送至配置的 AI 服务」，实际拿到的却是本地演示结果
+   * （2026-10-21 用户实测复现，交付说明 §19 F12）。
+   *
+   * 页面重新出现时读一次即可，提示与执行方式就对得上了。
+   */
+  private refreshDemoMode(): void {
+    const now = AiConfigRepository.isDemoMode();
+    if (now !== this.demoMode) {
+      this.demoMode = now;
+    }
+  }
+
+  /**
    * 载入内置示例图，让整条识别链路在没有相册的环境下也能跑通。
    *
    * 为什么要多这一步拷贝：
@@ -450,8 +468,12 @@ export struct AiRecognitionPage {
             .width('100%')
           }
 
-          // 隐私提示
-          Text('照片将发送至配置的 AI 服务进行分析，热量结果仅供参考。')
+          // 隐私提示。演示模式下**不会**发照片，文案必须跟着变，
+          // 否则用户看到「将发送至配置的 AI 服务」，实际却是本地模拟
+          // （交付说明 §19 F12）。
+          Text(this.demoMode
+            ? '演示模式：不会上传照片，结果由本地模拟数据生成。'
+            : '照片将发送至配置的 AI 服务进行分析，热量结果仅供参考。')
             .fontSize(fontSize.caption)
             .fontColor(color.textHint)
             .width('100%')
@@ -712,6 +734,10 @@ export struct AiRecognitionPage {
     .title('AI 拍照识别')
     .backgroundColor(color.bg)
     .linearGradient(pageGradient())
+    // 从 AI 设置页返回时重新读一次演示模式（见 refreshDemoMode 注释）
+    .onWillAppear(() => {
+      this.refreshDemoMode();
+    })
     .onReady((ctx: NavDestinationContext) => {
       const p = ctx.pathInfo.param as AiRecognitionParams | null | undefined;
       this.buildParams(p);

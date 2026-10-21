@@ -26,6 +26,14 @@ class FoodEditParams {
   fatG: number | null = null;
   /** V6：AI 模式透传的抠图贴纸路径（相对 filesDir）。手动模式为空串。 */
   stickerPath: string = '';
+  /**
+   * 新增时预置的餐次（0 早餐 / 1 午餐 / 2 晚餐 / 3 加餐）。
+   * -1 = 不指定，沿用表单默认值。
+   *
+   * 2026-10-21 补：从「午餐」进入新增时，表单默认是早餐，
+   * 保存后记录被记到早餐去（交付说明 §19 F02）。
+   */
+  mealType: number = -1;
 }
 
 /**
@@ -97,6 +105,10 @@ export struct FoodEditPage {
     this.mode = typeof p.mode === 'string' ? p.mode : 'add';
     this.date = typeof p.date === 'string' ? p.date : '';
     this.recordId = typeof p.id === 'number' ? p.id : -1;
+    // 新增时带上调用方指定的餐次（从「午餐」进来就预置午餐）
+    if (typeof p.mealType === 'number' && p.mealType >= 0 && p.mealType <= 3) {
+      this.mealType = p.mealType;
+    }
     if (this.mode === 'ai') {
       this.name = typeof p.name === 'string' ? p.name : '';
       this.totalKcalInput = typeof p.calories === 'number' && p.calories > 0 ?
@@ -308,6 +320,77 @@ export struct FoodEditPage {
     .width('100%')
   }
 
+  /**
+   * 三大宏量录入表单（克）。
+   *
+   * 两种录入模式**共用**这一个表单：
+   * 手动称重和 AI 整份估算都有蛋白/碳水/脂肪三个数，
+   * AI 模式还常常已经给好了估算值让用户核对。
+   * 原来它只出现在手动分支里，AI 模式的用户根本看不到、改不了。
+   */
+  @Builder
+  MacroForm() {
+    Column({ space: space.xs }) {
+      Text('三大宏量（克，可留空）')
+        .fontSize(fontSize.secondary)
+        .fontColor(color.textSecondary)
+        .width('100%')
+
+      Row({ space: space.xxs }) {
+        TextInput({ text: this.proteinInput, placeholder: '蛋白' })
+          .type(InputType.Number)
+          .height(layout.inputHeight)
+          .fontSize(fontSize.body)
+          .backgroundColor(color.surfaceMuted)
+          .borderRadius(radius.medium)
+          .layoutWeight(1)
+          .onChange((v: string) => {
+            this.proteinInput = v;
+          })
+
+        TextInput({ text: this.carbsInput, placeholder: '碳水' })
+          .type(InputType.Number)
+          .height(layout.inputHeight)
+          .fontSize(fontSize.body)
+          .backgroundColor(color.surfaceMuted)
+          .borderRadius(radius.medium)
+          .layoutWeight(1)
+          .onChange((v: string) => {
+            this.carbsInput = v;
+          })
+
+        TextInput({ text: this.fatInput, placeholder: '脂肪' })
+          .type(InputType.Number)
+          .height(layout.inputHeight)
+          .fontSize(fontSize.body)
+          .backgroundColor(color.surfaceMuted)
+          .borderRadius(radius.medium)
+          .layoutWeight(1)
+          .onChange((v: string) => {
+            this.fatInput = v;
+          })
+      }
+      .width('100%')
+
+      if (this.macroPreviewKcal() !== null) {
+        Text(`按蛋白4/碳水4/脂肪9 回算 ≈ ${this.macroPreviewKcal()} kcal`)
+          .fontSize(fontSize.caption)
+          .fontColor(color.textHint)
+          .width('100%')
+      } else {
+        Text('三项都填才会记录宏量，留空则不参与每日汇总')
+          .fontSize(fontSize.caption)
+          .fontColor(color.textHint)
+          .width('100%')
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    .padding(layout.cardPadding)
+    .backgroundColor(color.surfaceMuted)
+    .borderRadius(radius.card)
+    .width('100%')
+  }
+
   build() {
     NavDestination() {
       Scroll() {
@@ -435,68 +518,17 @@ export struct FoodEditPage {
               .backgroundColor(color.foodLight)
               .borderRadius(radius.card)
               .width('100%')
-
-              // V3 宏量录入 —— 两种录入模式都适用
-              Column({ space: space.xs }) {
-                Text('三大宏量（克，可留空）')
-                  .fontSize(fontSize.secondary)
-                  .fontColor(color.textSecondary)
-                  .width('100%')
-
-                Row({ space: space.xxs }) {
-                  TextInput({ text: this.proteinInput, placeholder: '蛋白' })
-                    .type(InputType.Number)
-                    .height(layout.inputHeight)
-                    .fontSize(fontSize.body)
-                    .backgroundColor(color.surfaceMuted)
-                    .borderRadius(radius.medium)
-                    .layoutWeight(1)
-                    .onChange((v: string) => {
-                      this.proteinInput = v;
-                    })
-
-                  TextInput({ text: this.carbsInput, placeholder: '碳水' })
-                    .type(InputType.Number)
-                    .height(layout.inputHeight)
-                    .fontSize(fontSize.body)
-                    .backgroundColor(color.surfaceMuted)
-                    .borderRadius(radius.medium)
-                    .layoutWeight(1)
-                    .onChange((v: string) => {
-                      this.carbsInput = v;
-                    })
-
-                  TextInput({ text: this.fatInput, placeholder: '脂肪' })
-                    .type(InputType.Number)
-                    .height(layout.inputHeight)
-                    .fontSize(fontSize.body)
-                    .backgroundColor(color.surfaceMuted)
-                    .borderRadius(radius.medium)
-                    .layoutWeight(1)
-                    .onChange((v: string) => {
-                      this.fatInput = v;
-                    })
-                }
-                .width('100%')
-
-                if (this.macroPreviewKcal() !== null) {
-                  Text(`按蛋白4/碳水4/脂肪9 回算 ≈ ${this.macroPreviewKcal()} kcal`)
-                    .fontSize(fontSize.caption)
-                    .fontColor(color.textHint)
-                    .width('100%')
-                } else {
-                  Text('三项都填才会记录宏量，留空则不参与每日汇总')
-                    .fontSize(fontSize.caption)
-                    .fontColor(color.textHint)
-                    .width('100%')
-                }
-              }
-              .alignItems(HorizontalAlign.Start)
-              .padding(layout.cardPadding)
-              .backgroundColor(color.surfaceMuted)
-              .borderRadius(radius.card)
-              .width('100%')
             }
+
+            /**
+             * 宏量表单：**两种录入模式共用**。
+             *
+             * 原来它被写在手动录入分支里，于是 AI 模式（`useAiForm()` 为真）
+             * 根本看不到这三个输入框 —— AI 已经估出了 38/72/19 g，
+             * 用户却**没法核对、也没法改**
+             * （2026-10-21 用户实测复现，交付说明 §19 F08）。
+             */
+            this.MacroForm()
 
             // 保存
             Button(this.mode === 'edit' ? '保存修改' : (this.useAiForm() ? '确认保存' : '保存记录'))

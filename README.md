@@ -18,6 +18,7 @@
 - **手帐分享卡是独立预览页**：截取黑板画布生成的分享卡在**独立路由页**里预览（全屏、底部固定关闭按钮、返回键由系统接管），只在本机生成与预览并存进沙箱，**不导出到相册**（导出需要新增相册权限并同步修改三处隐私披露）。
 - **宏量目标可手动设置**：「我的 → 修改宏量」有真实表单，可在「按体征自动推导」与「手动填写蛋白/碳水/脂肪」之间切换并保存；「每日目标设置」卡片里同时显示当前生效的宏量目标。
 - **确认弹窗、跨页刷新与删除语义已修正**：通用确认封装按依赖的 `DialogAction.SURE` 判断「确认」；进度页会跟随记录更新与 Tab 切换刷新；黑板上删除食物贴纸会**同时删掉那条饮食记录**，因此会先弹确认并说明后果；复制记录共用同一张贴纸文件时按引用计数回收，删副本不会带走原记录的贴纸。
+- **记餐闭环是通的**：从某一餐进入新增会落在那一餐；改完返回，明细行、营养汇总、黑板贴纸用的是同一份最新数据；分栏拖动才会改写记录归属的餐次，点开看看不会。
 
 ## 定价与收费
 
@@ -53,7 +54,7 @@ macOS 本地模拟器**，只能装真机调试。完整步骤（环境、镜像
 
 - **UI / 语言**：ArkUI 声明式 UI、ArkTS、Stage 模型。
 - **SDK**：HarmonyOS 26.0.0，`compatibleSdkVersion` / `targetSdkVersion` 为 `26.0.0`。
-- **持久化**：ArkData RDB（`caloriefit.db`），当前 7 张业务表：`app_settings`、`food_log`、`exercise_log`、`daily_activity`、`body_profile`、`water_log`、`fasting_log`。`food_log_v2` 是迁移过程使用的临时表。
+- **持久化**：ArkData RDB（`caloriefit.db`），当前 7 张业务表：`app_settings`、`food_log`、`exercise_log`、`daily_activity`、`body_profile`、`water_log`、`fasting_log`。`food_log_v2` 是迁移过程使用的临时表。`board_node`（黑板节点）与 `board_setting`（黑板设置）是黑板画布新增的两张表，数据库版本 V8。
 - **依赖**：`@pura/harmony-dialog`（`^1.1.8`）。
 - **运动数据**：运动记录（类型/时长/热量）由用户手动填写；**步数可由计步传感器自动采集**，需在运动页主动开启并授予 `ohos.permission.ACTIVITY_MOTION`。设备没有计步传感器时自动采集不可用，手动填写仍然可用。
 - **主题**：新安装默认深色以还原 NutriScan 实测视觉；用户可改为跟随系统或浅色。
@@ -93,9 +94,26 @@ $hdc="C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\h
 
 上面的 HAP 是未签名调试包，可用于本机模拟器调试。目前 `build-profile.json5` 没有配置签名档，尚未产出可分发的正式签名包；发布前需要配置开发者证书、Profile 和正式签名设置。
 
-## 当前验证状态（2026-10-21）
+## 当前验证状态（2026-10-22）
 
-- **模拟器实测缺陷修复轮（本轮最新）**：调试 HAP `entry/build/default/outputs/default/entry-default-unsigned.hap`，
+- **用户流程验收轮的缺陷修复（本轮最新）**：调试 HAP `entry/build/default/outputs/default/entry-default-unsigned.hap`，
+  3,433,414 字节，SHA-256 `6d986bcac196433030847170322ef24662da346759261eb1864cf394bb0882eb`，21:38 构建。按**普通用户流程**在模拟器实跑验收，复现 **6 个 P1、7 个 P2**，本轮全部修掉：
+  空餐次点「点击添加」不再进死路；从某一餐新增**会落在那一餐**（原来默认记到早餐）；
+  编辑后返回餐食详情**明细行也更新**（原来小计是新的、明细还是旧的）；
+  餐食详情三大营养汇总**与明细一致**（原来恒为 0）；
+  黑板贴纸与总热量**一致**（原来总数刷新了贴纸还写着旧值）；
+  分栏开启时**单击贴纸不再改写真实餐次**（原来点一下就把记录改到别的餐次并落库）。
+  P2：AI 记录份量显示「AI 整份估算」而非 `nullg`、AI 编辑页可改宏量、
+  网格视图同餐第 4 条不再被裁掉、视图模式不再丢失、
+  深色模式分享预览不再白字压米白底、识别页返回后演示模式提示会刷新、
+  示例便签带「示例」角标且有真实记录后自动让位。
+  验证：设备端单测 **76/76 PASS**（新增 V7→V8 迁移与 renderKey 3 条）；
+  `tools/verify_all.py` **14/14**；`tools/verify_board_canvas.py` **11/11**；
+  `tools/verify_blackboard.py` **15/15**；`tools/verify_fix_round.py` **12/12**；
+  `tools/verify_free_markers.py` 与 `tools/verify_privacy_runtime.py` 全部通过；
+  本轮新增 `tools/verify_user_flow.py` **20/20 PASS**（按用户流程逐条验 F01~F10、F07/F08）。
+  详见 `交付说明_NutriScan复现.md` §19。
+- **模拟器实测缺陷修复轮（上一轮）**：调试 HAP `entry/build/default/outputs/default/entry-default-unsigned.hap`，
   3,405,836 字节，SHA-256 `d3ed4c714d4ef3075030cfe24fed1536348a270be2bc52b31bfb6897a122d39a`，21:15 构建。
   按模拟器实跑调试报告逐条修复 12 个运行问题与 3 项源码级 P1 风险：
   通用确认弹窗的「确认」回调此前**永远不触发**（判的是 `action === 1`，

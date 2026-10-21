@@ -40,6 +40,14 @@ export struct StickyNoteItem {
   @Prop noteWidth: number = 148;
   /** 便签高（vp） */
   @Prop noteHeight: number = 156;
+  /**
+   * 是不是内置示例便签。
+   *
+   * 2026-10-21 补：示例便签原来和普通便签长得一模一样，
+   * 新用户一进来就看到「今天的小确幸」「和老友小聚」，
+   * 会以为是自己写过的内容。标一个「示例」角标说清楚。
+   */
+  @Prop isDemo: boolean = false;
 
   private isDark(): boolean {
     return this.paperStyle === StickyPaperStyle.CHALK_CARD;
@@ -93,6 +101,14 @@ export struct StickyNoteItem {
             .fontColor(this.inkDim())
             .maxLines(1)
           Blank()
+          if (this.isDemo) {
+            Text('示例')
+              .fontSize(9)
+              .fontColor('#B26A3C')
+              .backgroundColor(this.isDark() ? '#3A4147' : '#FFE9C7')
+              .borderRadius(6)
+              .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+          }
           if (this.kcal > 0) {
             Text(`${this.kcal}`)
               .fontSize(11)

@@ -568,7 +568,7 @@ export struct ActivityPage {
               .onClick(() => {
                 this.goEdit(log);
               })
-            }, (log: ExerciseLog) => log.id.toString())
+            }, (log: ExerciseLog) => log.renderKey())
           }
         }
         .width('100%')

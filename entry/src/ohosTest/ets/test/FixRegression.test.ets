@@ -19,9 +19,12 @@
 import { describe, it, expect, beforeAll } from '@ohos/hypium';
 import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { relationalStore } from '@kit.ArkData';
 import { Database } from '../../../main/ets/database/Database';
 import { FoodRepository } from '../../../main/ets/repositories/FoodRepository';
 import { FoodLog, FoodLogInput } from '../../../main/ets/models/FoodLog';
+import { BoardRepository } from '../../../main/ets/repositories/BoardRepository';
+import { BoardNodeModel, BoardNodeType } from '../../../main/ets/models/BoardModels';
 import { AiUrlPolicy } from '../../../main/ets/common/AiUrlPolicy';
 import { OverlayBackHandler } from '../../../main/ets/common/OverlayBackHandler';
 import {
@@ -31,6 +34,7 @@ import {
   validateBodyAge
 } from '../../../main/ets/common/Validators';
 import { StickerCutoutService } from '../../../main/ets/services/StickerCutoutService';
+import { migrateV7ToV8 } from '../../../main/ets/database/MigrationV7ToV8';
 
 /** 单测专用日期，避免碰到真实数据 */
 const TEST_DATE: string = '2026-04-10';
@@ -193,6 +197,122 @@ export default function fixRegressionTest() {
       expect(validateBodyAge('30').ok).assertTrue();
       expect(validateBodyAge('0').ok).assertFalse();
       expect(validateBodyAge('999').ok).assertFalse();
+    });
+
+    /* ---------------- V7 → V8 迁移：放开 node_type 并转换旧示例便签 ---------------- */
+
+    it('V7→V8 迁移放开 node_type 并把旧示例便签转成 DEMO_NOTE', 0, async () => {
+      const store = await Database.ensure();
+      // 造一张 V7 结构的 board_node（CHECK 只允许 0/1/2）
+      await store.executeSql('DROP TABLE IF EXISTS board_node_v7_probe');
+      await store.executeSql(`
+        CREATE TABLE board_node_v7_probe (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          node_type INTEGER NOT NULL CHECK (node_type IN (0, 1, 2)),
+          food_id INTEGER,
+          title TEXT NOT NULL DEFAULT '',
+          calories INTEGER NOT NULL DEFAULT 0,
+          protein_g REAL, carbs_g REAL, fat_g REAL,
+          portion_desc TEXT NOT NULL DEFAULT '',
+          meal_category INTEGER NOT NULL DEFAULT 3,
+          time_str TEXT NOT NULL DEFAULT '',
+          mood_emoji TEXT NOT NULL DEFAULT '',
+          companion_text TEXT NOT NULL DEFAULT '',
+          memo_text TEXT NOT NULL DEFAULT '',
+          ai_advice TEXT NOT NULL DEFAULT '',
+          sticker_uri TEXT NOT NULL DEFAULT '',
+          paper_style INTEGER NOT NULL DEFAULT 0,
+          pin_type INTEGER NOT NULL DEFAULT 0,
+          pos_x REAL NOT NULL DEFAULT 0, pos_y REAL NOT NULL DEFAULT 0,
+          scale REAL NOT NULL DEFAULT 1, rotation REAL NOT NULL DEFAULT 0,
+          z_index INTEGER NOT NULL DEFAULT 0,
+          is_flipped INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        )`);
+      // 旧写法：示例便签存成普通 STICKY_NOTE(1)
+      await store.executeSql(`
+        INSERT INTO board_node_v7_probe
+          (date, node_type, food_id, title, calories, ai_advice, created_at, updated_at)
+        VALUES ('2026-04-11', 1, NULL, '今天的小确幸', 0,
+                '蛋白质摄入不错，明天记得补点蔬菜均衡一下～', 1, 1)`);
+      // 旧约束下插 node_type=3 必须失败
+      let rejected = false;
+      try {
+        await store.executeSql(`
+          INSERT INTO board_node_v7_probe
+            (date, node_type, title, created_at, updated_at)
+          VALUES ('2026-04-11', 3, '不该插进去', 1, 1)`);
+      } catch (e) {
+        rejected = true;
+      }
+      expect(rejected).assertTrue();
+
+      // 迁移本体：把探针表改名为 board_node，再跑真正的迁移
+      await store.executeSql('DROP TABLE IF EXISTS board_node');
+      await store.executeSql('ALTER TABLE board_node_v7_probe RENAME TO board_node');
+      await migrateV7ToV8(store);
+
+      // 约束已放开：node_type=3 现在能插
+      let accepted = true;
+      try {
+        await store.executeSql(`
+          INSERT INTO board_node
+            (date, node_type, title, created_at, updated_at)
+          VALUES ('2026-04-11', 3, '示例便签', 1, 1)`);
+      } catch (e) {
+        accepted = false;
+      }
+      expect(accepted).assertTrue();
+
+      // 旧的示例便签已被转成 DEMO_NOTE，点评也换成了描述功能的新文案
+      const rs = await store.querySql(
+        "SELECT node_type, ai_advice FROM board_node WHERE title = '今天的小确幸'");
+      try {
+        expect(rs.goToFirstRow()).assertTrue();
+        expect(rs.getLong(rs.getColumnIndex('node_type'))).assertEqual(3);
+        const advice = rs.getString(rs.getColumnIndex('ai_advice'));
+        expect(advice.includes('蛋白质摄入不错')).assertFalse();
+        expect(advice.includes('示例内容')).assertTrue();
+      } finally {
+        rs.close();
+      }
+
+      // 清理：把探针表删掉，恢复到干净状态
+      await store.executeSql('DELETE FROM board_node');
+      await store.executeSql('DROP TABLE IF EXISTS board_node_v7_probe');
+    });
+
+    it('黑板节点的 renderKey 随内容变化', 0, () => {
+      const a = new BoardNodeModel();
+      a.id = 7;
+      a.title = '米饭';
+      a.calories = 120;
+      a.mealCategory = 1;
+      const key1 = a.renderKey();
+
+      // 只改 id 之外的内容 → key 必须变，否则列表会复用旧组件、显示旧数据
+      a.calories = 240;
+      const key2 = a.renderKey();
+      expect(key1 === key2).assertFalse();
+
+      // 内容没变 → key 不变，组件仍复用，拖拽状态不丢
+      const b = new BoardNodeModel();
+      b.id = 7;
+      b.title = '米饭';
+      b.calories = 120;
+      b.mealCategory = 1;
+      expect(b.renderKey() === key1).assertTrue();
+    });
+
+    it('饮食记录的 renderKey 随内容变化', 0, () => {
+      const a = new FoodLog(1, '2026-04-11', '米饭', 1, 100, 120, 120, 0,
+        null, null, 10, 20, 5, 1, 1, null);
+      const key1 = a.renderKey();
+      a.calories = 240;
+      expect(a.renderKey() === key1).assertFalse();
+      a.calories = 120;
+      expect(a.renderKey() === key1).assertTrue();
     });
   });
 }

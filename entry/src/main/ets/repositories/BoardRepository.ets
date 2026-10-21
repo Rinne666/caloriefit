@@ -80,7 +80,8 @@ export class BoardRepository {
     const visible: BoardNodeModel[] = [];
     let hasDemo = false;
     for (let i = 0; i < nodes.length; i++) {
-      if (nodes[i].nodeType === BoardNodeType.DEMO_STICKER) {
+      if (nodes[i].nodeType === BoardNodeType.DEMO_STICKER ||
+        nodes[i].nodeType === BoardNodeType.DEMO_NOTE) {
         hasDemo = true;
         break;
       }
@@ -91,11 +92,15 @@ export class BoardRepository {
     }
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
-      if (node.nodeType === BoardNodeType.DEMO_STICKER) {
+      if (node.nodeType === BoardNodeType.DEMO_STICKER ||
+        node.nodeType === BoardNodeType.DEMO_NOTE) {
+        // 有真实记录了 → 示例让位（便签里的「示例」点评不该继续替用户总结摄入）
         if (hasFood) {
           continue;
         }
-        await BoardRepository.resolveDemoSticker(node);
+        if (node.nodeType === BoardNodeType.DEMO_STICKER) {
+          await BoardRepository.resolveDemoSticker(node);
+        }
       }
       visible.push(node);
     }
@@ -385,17 +390,24 @@ export class BoardRepository {
     return new BoardSetting(BoardThemeType.CHALKBOARD, BoardViewMode.FREE_CANVAS);
   }
 
-  /** 写黑板设置 */
+  /**
+   * 写黑板设置。
+   *
+   * ## 必须用 upsert，不能只用 UPDATE
+   * `board_setting` 是单行表（id = 1），默认行由数据库初始化迁移插入。
+   * 但「删除全部健康数据」会把这一行**一起删掉**（它在 clearAllUserData 的清理列表里）。
+   * 之后如果只用 `UPDATE ... WHERE id = 1`，行不存在时**影响 0 行、不报错**，
+   * 于是「切到网格视图」这个操作**静默丢失** ——
+   * 切日期回来又变回默认的自由画布（2026-10-21 用户实测复现，交付说明 §19 F10）。
+   *
+   * `INSERT OR REPLACE` 在行不存在时会插一行，行存在时覆盖，两种情况都对。
+   */
   static async saveSetting(theme: BoardThemeType, viewMode: BoardViewMode): Promise<void> {
     const store = await Database.ensure();
-    const bucket: relationalStore.ValuesBucket = {
-      'theme': theme,
-      'view_mode': viewMode,
-      'updated_at': Date.now()
-    };
-    const predicates = new relationalStore.RdbPredicates(SETTING_TABLE);
-    predicates.equalTo('id', 1);
-    await store.update(bucket, predicates);
+    await store.executeSql(
+      `INSERT OR REPLACE INTO board_setting (id, theme, view_mode, updated_at)
+       VALUES (1, ?, ?, ?)`,
+      [theme, viewMode, Date.now()]);
   }
 
   /* ------------------------------ 示例数据 ------------------------------ */
@@ -413,8 +425,8 @@ export class BoardRepository {
   static async seedDemo(date: string): Promise<number> {
     const store = await Database.ensure();
     const resultSet = await store.querySql(
-      `SELECT COUNT(*) AS cnt FROM ${TABLE} WHERE date = ? AND node_type = ?`,
-      [date, BoardNodeType.DEMO_STICKER]);
+      `SELECT COUNT(*) AS cnt FROM ${TABLE} WHERE date = ? AND node_type IN (?, ?)`,
+      [date, BoardNodeType.DEMO_STICKER, BoardNodeType.DEMO_NOTE]);
     let count = 0;
     try {
       if (resultSet.goToNextRow()) {
@@ -473,7 +485,10 @@ export class BoardRepository {
     try {
       const note = new BoardNodeModel();
       note.date = date;
-      note.nodeType = BoardNodeType.STICKY_NOTE;
+      // 2026-10-21：示例便签用独立的 DEMO_NOTE 类型。
+      // 原来存成普通 STICKY_NOTE，新用户一进来就看到「今天的小确幸」
+      // 和「蛋白质摄入不错」这种替用户下结论的点评，还会被当成用户自己写的内容。
+      note.nodeType = BoardNodeType.DEMO_NOTE;
       note.foodId = null;
       note.title = '今天的小确幸';
       note.calories = 0;
@@ -482,7 +497,7 @@ export class BoardRepository {
       note.moodEmoji = '🥳';
       note.companionText = '和老友小聚';
       note.memoText = '外皮焦脆汁水超多！这家的生煎包饭搭子认证～';
-      note.aiAdvice = '蛋白质摄入不错，明天记得补点蔬菜均衡一下～';
+      note.aiAdvice = '示例内容：记录三餐后，这里会显示属于你的建议';
       note.x = 140;
       note.y = 134;
       note.rotation = 2;

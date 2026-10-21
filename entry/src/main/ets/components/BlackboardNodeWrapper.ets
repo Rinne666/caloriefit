@@ -50,8 +50,16 @@ export struct BlackboardNodeWrapper {
   onBringToFront: (id: number) => void = () => {};
   /** 打开详情 */
   onOpenNode: (node: BoardNodeModel) => void = () => {};
-  /** 变换结束，需要落库 */
+  /** 变换结束，需要落库（缩放 / 旋转） */
   onTransformEnd: (node: BoardNodeModel) => void = () => {};
+  /**
+   * 拖拽结束，需要落库。
+   *
+   * 与 `onTransformEnd` 分开，是因为**只有拖动**才可能把贴纸拖进别的粉笔分栏，
+   * 也就只有拖动才允许改写这条记录归属的餐次。
+   * 点按置顶、缩放、旋转都不该动用户的饮食数据。
+   */
+  onDragFinished: (node: BoardNodeModel) => void = () => {};
   /** 翻转 */
   onToggleFlip: (node: BoardNodeModel) => void = () => {};
   /** 节点内容 */
@@ -155,7 +163,7 @@ export struct BlackboardNodeWrapper {
           })
           .onActionEnd(() => {
             this.pressed = false;
-            this.onTransformEnd(this.node);
+            this.onDragFinished(this.node);
           })
           .onActionCancel(() => {
             this.pressed = false;

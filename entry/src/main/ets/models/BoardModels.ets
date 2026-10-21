@@ -32,7 +32,18 @@ export enum BoardNodeType {
    * 用户看到自己刚装的应用就显示吃了 1200 kcal，会以为算错了。
    * 所以示例节点单独一种类型：不计入热量，录下第一条真实记录后自动清掉。
    */
-  DEMO_STICKER = 2
+  DEMO_STICKER = 2,
+  /**
+   * 内置示例便签。
+   *
+   * 2026-10-21 补：示例便签原来存成普通 `STICKY_NOTE`，
+   * 于是新用户一进来就看到「今天的小确幸」「和老友小聚」
+   * 以及「蛋白质摄入不错」这种**对用户摄入下结论**的点评，
+   * 还会被误当成用户自己写的内容。
+   * 单独一种类型后，界面能给它打上「示例」标记，
+   * 并且和示例贴纸一样：有真实记录后自动让位。
+   */
+  DEMO_NOTE = 3
 }
 
 /** 便签纸样式（对应设计方案的 StickyPaperStyle） */
@@ -157,6 +168,30 @@ export class BoardNodeModel {
   /** 是否有可展示的碎碎念 / 心情 / 和谁吃 */
   hasPersonalNote(): boolean {
     return this.memoText.length > 0 || this.moodEmoji.length > 0 || this.companionText.length > 0;
+  }
+
+  /**
+   * 列表渲染用的 key。
+   *
+   * ## 为什么不能只用 id
+   * `ForEach` 用 key 决定「这一项是复用旧组件还是重建」。
+   * key 只有 id 时，改过内容的那张贴纸 id 不变 → 组件被复用 →
+   * 复用的组件还绑着**旧的对象** → 界面停在旧数据
+   * （表现为「顶部总热量已经是新值，贴纸还写着旧热量、旧餐次」，
+   *  2026-10-21 用户实测复现，交付说明 §19 F05）。
+   *
+   * 把**内容签名**加进 key，内容一变 key 就变，组件重建、显示新值。
+   * 内容没变时 key 不变，组件仍然复用，拖拽中的状态不会丢。
+   *
+   * 签名要覆盖**所有会被显示出来的字段**（含翻面才看得到的宏量），
+   * 少一个就可能留下一个「改了不刷新」的数字。
+   */
+  renderKey(): string {
+    return `${this.id}-${this.title}-${this.calories}-${this.mealCategory}-` +
+      `${this.proteinGrams}-${this.carbsGrams}-${this.fatGrams}-` +
+      `${this.portionDesc}-${this.memoText}-${this.companionText}-${this.aiAdvice}-` +
+      `${this.timeStr}-${this.moodEmoji}-${this.stickerUri.length}-` +
+      `${this.paperStyle}-${this.pinType}-${this.isFlipped}`;
   }
 }
 

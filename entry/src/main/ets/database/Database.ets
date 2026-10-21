@@ -19,6 +19,7 @@ import { migrateV3ToV4 } from './MigrationV3ToV4';
 import { migrateV4ToV5 } from './MigrationV4ToV5';
 import { migrateV5ToV6 } from './MigrationV5ToV6';
 import { migrateV6ToV7 } from './MigrationV6ToV7';
+import { migrateV7ToV8 } from './MigrationV7ToV8';
 
 const DOMAIN = 0x0001;
 const TAG = 'CalorieFitDB';
@@ -112,6 +113,8 @@ export class Database {
     await migrateV5ToV6(store);
     // V6 → V7 建黑板画布的节点表与设置表。
     await migrateV6ToV7(store);
+    // V7 → V8 重建 board_node，放开 node_type（新增 DEMO_NOTE 示例便签类型）。
+    await migrateV7ToV8(store);
     store.version = DATABASE_VERSION;
     Database.store = store;
     return store;

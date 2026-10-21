@@ -81,6 +81,24 @@ export class FoodLog {
       (this.fatG as number) * 9
     );
   }
+
+  /**
+   * 列表渲染用的 key。
+   *
+   * ## 为什么不能只用 id
+   * `ForEach` 用 key 决定「这一行是复用旧组件还是重建」。
+   * key 只有 id 时，编辑过的那条记录**id 不变**，于是 ArkUI 复用旧组件，
+   * 旧组件还绑着**旧的 FoodLog 对象** —— 界面上就出现
+   * 「小计已经是新值、明细行还是旧值」的矛盾
+   * （2026-10-21 用户实测复现，交付说明 §19 F03）。
+   *
+   * 把**内容签名**加进 key，内容一变 key 就变，组件重建、行就更新了。
+   * `updatedAt` 覆盖绝大多数情况（每次写库都会刷新），
+   * 再带上热量与名称，防止同一毫秒内两次写入漏掉。
+   */
+  renderKey(): string {
+    return `${this.id}-${this.updatedAt}-${this.calories}-${this.name}-${this.mealType}`;
+  }
 }
 
 /** 编辑页构造的入库输入，不含 id/createdAt/updatedAt */

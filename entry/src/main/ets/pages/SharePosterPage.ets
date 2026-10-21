@@ -19,6 +19,8 @@
  * 想要图片的话，系统截图同样可用。
  */
 
+import { color, fontSize, space, layout, pageGradient, primaryButtonGradient } from '../common/DesignTokens';
+
 /** 路由参数（与 components/BlackboardView.ets 的 BoardPosterParams 结构一致） */
 class SharePosterParams {
   posterUri: string = '';
@@ -60,19 +62,19 @@ export struct SharePosterPage {
                 .shadow({ radius: 8, color: '#33000000', offsetX: 0, offsetY: 4 })
             } else {
               Text('没有可预览的分享卡')
-                .fontSize(13)
-                .fontColor('#8A7742')
+                .fontSize(fontSize.body)
+                .fontColor(color.textSecondary)
             }
 
             Text(this.savedPath.length > 0 ? `已保存到：${this.savedPath}` : '')
-              .fontSize(10)
-              .fontColor('#8A7742')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textSecondary)
               .width('100%')
               .maxLines(3)
 
             Text('分享卡只在本机生成与预览，不会发送到任何服务器。')
-              .fontSize(10)
-              .fontColor('#A08A55')
+              .fontSize(fontSize.caption)
+              .fontColor(color.textHint)
               .width('100%')
           }
           .width('100%')
@@ -85,11 +87,12 @@ export struct SharePosterPage {
         .align(Alignment.Top)
 
         Button('关闭')
-          .fontSize(13)
+          .fontSize(fontSize.body)
           .height(40)
           .width('88%')
-          .backgroundColor('#C2552F')
-          .fontColor('#FFFFFF')
+          .fontColor(color.onPrimary)
+          .linearGradient(primaryButtonGradient())
+          .borderRadius(14)
           .margin({ bottom: 18 })
           .onClick(() => {
             this.navStack.pop();
@@ -97,10 +100,20 @@ export struct SharePosterPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('#FFF8E7')
+      /**
+       * 背景用**应用主题**，不要写死米白。
+       *
+       * 写死米白时，深色模式下系统状态栏与导航标题仍是白字
+       * （它们跟随 App 的深浅色设置），白字落在米白底上完全看不见
+       * （2026-10-21 用户实测复现，交付说明 §19 F11）。
+       * 用主题 token 后，底色和文字色一起跟着深浅色走。
+       */
+      .backgroundColor(color.bg)
+      .linearGradient(pageGradient())
     }
     .title('今日手帐分享卡')
-    .backgroundColor('#FFF8E7')
+    .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
     .onReady((ctx: NavDestinationContext) => {
       const p = ctx.pathInfo.param as SharePosterParams | null | undefined;
       if (p !== null && p !== undefined) {
