@@ -17,7 +17,12 @@ export const DEFAULT_GOALS: Goals = {
 };
 
 export const DATABASE_NAME = 'caloriefit.db';
-export const DATABASE_VERSION = 2;
+export const DATABASE_VERSION = 8;
+
+/** Atwater 换算系数(kcal/g) —— 与 services/CalorieEngine.ets 保持一致 */
+export const ATWATER_PROTEIN: number = 4;
+export const ATWATER_CARB: number = 4;
+export const ATWATER_FAT: number = 9;
 
 export const MEAL_LABELS: string[] = [
   '早餐', '午餐', '晚餐', '加餐'
@@ -39,6 +44,16 @@ export interface Limits {
   stepsGoalMax: number;
   minutesGoalMax: number;
   activityKcalGoalMax: number;
+  /** 体征档案：体重 kg 上限 */
+  bodyWeightMax: number;
+  /** 体征档案：身高 cm 上限 */
+  bodyHeightMax: number;
+  /** 体征档案：年龄岁数上限 */
+  bodyAgeMax: number;
+  /** 体征档案：体脂率 % 上限（不含该值本身） */
+  bodyFatMax: number;
+  /** 宏量目标：蛋白 / 碳水 / 脂肪 g 的上限 */
+  macroGramsMax: number;
 }
 
 export const LIMITS: Limits = {
@@ -51,7 +66,12 @@ export const LIMITS: Limits = {
   budgetMax: 10000,
   stepsGoalMax: 100000,
   minutesGoalMax: 1440,
-  activityKcalGoalMax: 10000
+  activityKcalGoalMax: 10000,
+  bodyWeightMax: 300,
+  bodyHeightMax: 250,
+  bodyAgeMax: 120,
+  bodyFatMax: 70,
+  macroGramsMax: 1000
 };
 
 export const KIT_NAME = 'CalorieFit';

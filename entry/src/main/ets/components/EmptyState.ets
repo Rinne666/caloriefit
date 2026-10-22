@@ -1,8 +1,14 @@
 /**
  * 统一空状态提示
+ *
+ * 空状态沿用页面的平面卡片材质，按钮使用品牌强调色。
  */
 
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, space, layout,
+  glass, glassGradient, glassShadow,
+  primaryButtonGradient, buttonGlow
+} from '../common/DesignTokens';
 
 @Component
 export struct EmptyState {
@@ -15,14 +21,16 @@ export struct EmptyState {
       Text(this.message)
         .fontSize(fontSize.body)
         .fontColor(color.textHint)
+        .textAlign(TextAlign.Center)
 
       if (this.buttonText.length > 0) {
         Button(this.buttonText)
           .height(layout.buttonHeight)
           .fontSize(fontSize.body)
           .fontColor(color.onPrimary)
-          .backgroundColor(color.primary)
-          .borderRadius(radius.large)
+          .linearGradient(primaryButtonGradient())
+          .borderRadius(14)
+          .shadow(buttonGlow())
           .onClick(() => {
             this.onAction();
           })
@@ -30,9 +38,13 @@ export struct EmptyState {
     }
     .width('100%')
     .padding(layout.cardPadding * 2)
-    .backgroundColor(color.surface)
-    .borderRadius(radius.card)
-    .border({ width: layout.borderWidth, color: color.border })
+    .linearGradient({
+      angle: 160,
+      colors: [[color.glassFillStrong, 0], [color.glassFill, 1]]
+    })
+    .borderRadius(glass.cardRadius)
+    .border({ width: glass.borderWidth, color: color.glassBorder })
+    .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
     .alignItems(HorizontalAlign.Center)
   }
 }

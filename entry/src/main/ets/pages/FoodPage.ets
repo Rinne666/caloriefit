@@ -3,11 +3,15 @@
  */
 
 import { FoodRepository } from '../repositories/FoodRepository';
+import { anim } from '../common/Motion';
 import { SettingsRepository } from '../repositories/SettingsRepository';
 import { FoodLog } from '../models/FoodLog';
 import { AppSettings } from '../models/AppSettings';
 import { EmptyState } from '../components/EmptyState';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import {
+  color, fontSize, space, radius, layout, pageGradient,
+  toneVeil, glass, glassGradient, glassShadow, primaryButtonGradient, buttonGlow
+} from '../common/DesignTokens';
 import { displayDate, toDateKey, parseDateKey, isFutureDate, formatNumber } from '../common/DateUtils';
 import { MEAL_LABELS } from '../common/Constants';
 
@@ -16,6 +20,31 @@ export struct FoodPage {
   @Consume('navStack') navStack: NavPathStack;
   @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
   @StorageLink('selectedDate') @Watch('reload') selectedDate: string = '';
+  /** 页面内容入场开关，见 build() 末尾的 opacity/translate */
+  @State private entered: boolean = false;
+
+  /**
+   * 当前被按住的记录 id，-1 表示没按。
+   *
+   * 为什么用 id 而不是布尔量：FoodRow 是本组件内的 @Builder，
+   * 所有行共用同一个 this，一个布尔量会让「按一行、所有行一起缩」。
+   * 同组件内的 @Builder 用 this 是安全的 —— 出问题的是跨组件的
+   * @BuilderParam 插槽（实测会把 this 绑到宿主组件上）。
+   */
+  @State private pressedFoodId: number = -1;
+
+  enterPage(): void {
+    this.entered = true;
+  }
+
+  private touchFood(id: number, e: TouchEvent): void {
+    if (e.type === TouchType.Down) {
+      this.pressedFoodId = id;
+    } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+      this.pressedFoodId = -1;
+    }
+  }
+
   @State foods: FoodLog[] = [];
   @State budget: number = 1800;
 
@@ -137,6 +166,22 @@ export struct FoodPage {
           `${log.grams}g × ${log.kcalPer100g}kcal/100g`)
           .fontSize(fontSize.caption)
           .fontColor(color.textHint)
+
+        // V3：宏量摘要。有完整宏量才显示，不以 0 冒充
+        if (log.hasMacros()) {
+          Row({ space: space.xxs }) {
+            Text(`蛋白 ${Math.round(log.proteinG as number)}g`)
+              .fontSize(fontSize.caption)
+              .fontColor(color.macroProtein)
+            Text(`碳水 ${Math.round(log.carbsG as number)}g`)
+              .fontSize(fontSize.caption)
+              .fontColor(color.macroCarbs)
+            Text(`脂肪 ${Math.round(log.fatG as number)}g`)
+              .fontSize(fontSize.caption)
+              .fontColor(color.macroFat)
+          }
+          .alignItems(VerticalAlign.Center)
+        }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -155,7 +200,22 @@ export struct FoodPage {
         })
     }
     .width('100%')
-    .padding({ top: space.sm, bottom: space.sm })
+    .padding({ top: space.sm, bottom: space.sm, left: space.sm, right: space.sm })
+    // 每条记录按名称哈希拿自己的情绪色调 —— 同一条永远是同一个色，
+    // 同一餐里不同的食物则大概率不同。色块统一，排版统一，只有色调在变。
+    .linearGradient({ angle: 135, colors: [[toneVeil(log.name), 0], [color.glassFill, 1]] })
+    .borderRadius(radius.medium)
+    .border({ width: 1, color: color.glassBorder })
+    // 按压反馈：轻微缩放。幅度刻意压到 0.965 ——
+    // 再大就变成"卡片在躲"，再小又感觉不到被点到。
+    .scale({
+      x: this.pressedFoodId === log.id ? anim.pressScale : 1,
+      y: this.pressedFoodId === log.id ? anim.pressScale : 1
+    })
+    .animation({ duration: anim.pressMs, curve: anim.ease })
+    .onTouch((e: TouchEvent) => {
+      this.touchFood(log.id, e);
+    })
     .onClick(() => {
       this.goEdit(log);
     })
@@ -191,52 +251,65 @@ export struct FoodPage {
         .width('100%')
 
         // 每日摄入汇总卡
-        Row() {
-          Column({ space: 4 }) {
-            Text(`${formatNumber(this.totalCalories())} / ${formatNumber(this.budget)} kcal`)
-              .fontSize(fontSize.metric)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(color.food)
-            Text('已摄入 / 每日饮食预算')
-              .fontSize(fontSize.caption)
-              .fontColor(color.textHint)
+        Column() {
+          Row() {
+            Column({ space: 4 }) {
+              Text(`${formatNumber(this.totalCalories())} / ${formatNumber(this.budget)} kcal`)
+                .fontSize(fontSize.metric)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(color.text)
+              Text('已摄入 / 每日饮食预算')
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
           }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
+          .width('100%')
         }
-        .padding(layout.cardPadding)
-        .backgroundColor(color.foodLight)
-        .borderRadius(radius.card)
         .width('100%')
+        .padding(layout.cardPadding)
+        .linearGradient({
+          angle: 160,
+          colors: [[toneVeil('budget'), 0], [color.glassFillStrong, 1]]
+        })
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
 
         // AI 拍照识别入口
-        Row({ space: space.sm }) {
-          Text('📷')
-            .fontSize(22)
-          Column({ space: 2 }) {
-            Text('AI 拍照识别')
-              .fontSize(fontSize.body)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(color.primary)
-            Text('拍一张照片，AI 估算整份热量')
-              .fontSize(fontSize.caption)
+        Column() {
+          Row({ space: space.sm }) {
+            Text('📷')
+              .fontSize(22)
+            Column({ space: 2 }) {
+              Text('AI 拍照识别')
+                .fontSize(fontSize.body)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(color.text)
+              Text('拍一张照片，AI 估算整份热量')
+                .fontSize(fontSize.caption)
+                .fontColor(color.textHint)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text('›')
+              .fontSize(fontSize.sectionTitle)
               .fontColor(color.textHint)
           }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-
-          Text('›')
-            .fontSize(fontSize.sectionTitle)
-            .fontColor(color.textHint)
+          .width('100%')
+          .onClick(() => {
+            this.navStack.pushPathByName('AiRecognition',
+              new AiRecognitionNavParams(this.selectedDate));
+          })
         }
-        .padding(layout.cardPadding)
-        .backgroundColor(color.primaryLight)
-        .borderRadius(radius.card)
         .width('100%')
-        .onClick(() => {
-          this.navStack.pushPathByName('AiRecognition',
-            new AiRecognitionNavParams(this.selectedDate));
-        })
+        .padding(layout.cardPadding)
+        .linearGradient(glassGradient(toneVeil('ai')))
+        .borderRadius(glass.cardRadius)
+        .border({ width: glass.borderWidth, color: color.glassBorder })
+        .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
 
         if (this.foods.length === 0) {
           EmptyState({
@@ -248,6 +321,10 @@ export struct FoodPage {
           })
         } else {
           ForEach(MEAL_LABELS, (label: string, index: number) => {
+            // 卡片外壳写在这里而不是抽成卡片组件：
+            // 卡片本身就在 ForEach 里，需要带参的 builder，
+            // 而 @BuilderParam 不支持柯里化，套一层只会更绕。
+            // 层次与其余卡片完全一致。
             Column({ space: space.xs }) {
               Row() {
                 Text(label)
@@ -269,14 +346,16 @@ export struct FoodPage {
               } else {
                 ForEach(this.mealFoods(index), (log: FoodLog) => {
                   this.FoodRow(log)
-                }, (log: FoodLog) => log.id.toString())
+                }, (log: FoodLog) => log.renderKey())
               }
             }
-            .padding(layout.cardPadding)
-            .backgroundColor(color.surface)
-            .borderRadius(radius.card)
-            .border({ width: layout.borderWidth, color: color.border })
             .width('100%')
+            .padding(layout.cardPadding)
+            .linearGradient(glassGradient(toneVeil(label)))
+            .borderRadius(glass.cardRadius)
+            .border({ width: glass.borderWidth, color: color.glassBorder })
+            .shadow(glassShadow(glass.shadowRadius, glass.shadowOffsetY))
+            .alignItems(HorizontalAlign.Start)
           }, (label: string) => label)
         }
 
@@ -286,20 +365,30 @@ export struct FoodPage {
           .height(layout.buttonHeight)
           .fontSize(fontSize.body)
           .fontColor(color.onPrimary)
-          .backgroundColor(color.primary)
-          .borderRadius(radius.large)
+          .linearGradient(primaryButtonGradient())
+          .borderRadius(14)
+          .shadow(buttonGlow())
           .onClick(() => {
             this.goAdd();
           })
       }
       .padding(layout.pagePadding)
       .constraintSize({ minHeight: '100%' })
+      // 入场：300ms Fade + Slide，对齐 NutriScan 实测的 easeOut 转场。
+      // 首帧 entered=false（透明 + 下移），onAppear 后翻 true 触发隐式动画。
+      .opacity(this.entered ? 1 : 0)
+      .translate({ x: 0, y: this.entered ? 0 : anim.enterShiftVp })
+      .animation({ duration: anim.enterMs, curve: anim.ease })
+      .onAppear(() => {
+        this.enterPage();
+      })
     }
     .width('100%')
     .height('100%')
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
   }
 
   private mealSubtotal(mealType: number): number {

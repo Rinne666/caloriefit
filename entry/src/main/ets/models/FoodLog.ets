@@ -25,13 +25,28 @@ export class FoodLog {
   entryMode: number;
   aiConfidence: number | null;
   aiNotes: string | null;
+  /**
+   * V3 宏量营养素（克）。两种录入模式都可有值。
+   * 手动称重：用户按包装标签填写
+   * AI 识别：由模型估算，经 Atwater 一致性校验后写入
+   * null 表示未记录 —— 不参与汇总，不以 0 冒充
+   */
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
   createdAt: number;
   updatedAt: number;
+  /**
+   * V6：抠图后食物贴纸的 PNG 路径（相对 filesDir）。
+   * null 表示这条记录没有贴纸 —— 手动录入的、或抠图失败/未做识别的都属此类。
+   */
+  stickerPath: string | null;
 
   constructor(id: number, date: string, name: string, mealType: number,
     grams: number | null, kcalPer100g: number | null, calories: number,
     entryMode: number, aiConfidence: number | null, aiNotes: string | null,
-    createdAt: number, updatedAt: number) {
+    proteinG: number | null, carbsG: number | null, fatG: number | null,
+    createdAt: number, updatedAt: number, stickerPath: string | null) {
     this.id = id;
     this.date = date;
     this.name = name;
@@ -42,8 +57,47 @@ export class FoodLog {
     this.entryMode = entryMode;
     this.aiConfidence = aiConfidence;
     this.aiNotes = aiNotes;
+    this.proteinG = proteinG;
+    this.carbsG = carbsG;
+    this.fatG = fatG;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
+    this.stickerPath = stickerPath;
+  }
+
+  /** 是否记录了完整宏量（三者同时有值） */
+  hasMacros(): boolean {
+    return this.proteinG !== null && this.carbsG !== null && this.fatG !== null;
+  }
+
+  /** 宏量按 Atwater 回算的热量；未记录宏量时返回 0 */
+  macroCalories(): number {
+    if (!this.hasMacros()) {
+      return 0;
+    }
+    return Math.round(
+      (this.proteinG as number) * 4 +
+      (this.carbsG as number) * 4 +
+      (this.fatG as number) * 9
+    );
+  }
+
+  /**
+   * 列表渲染用的 key。
+   *
+   * ## 为什么不能只用 id
+   * `ForEach` 用 key 决定「这一行是复用旧组件还是重建」。
+   * key 只有 id 时，编辑过的那条记录**id 不变**，于是 ArkUI 复用旧组件，
+   * 旧组件还绑着**旧的 FoodLog 对象** —— 界面上就出现
+   * 「小计已经是新值、明细行还是旧值」的矛盾
+   * （2026-10-21 用户实测复现，交付说明 §19 F03）。
+   *
+   * 把**内容签名**加进 key，内容一变 key 就变，组件重建、行就更新了。
+   * `updatedAt` 覆盖绝大多数情况（每次写库都会刷新），
+   * 再带上热量与名称，防止同一毫秒内两次写入漏掉。
+   */
+  renderKey(): string {
+    return `${this.id}-${this.updatedAt}-${this.calories}-${this.name}-${this.mealType}`;
   }
 }
 
@@ -58,10 +112,17 @@ export class FoodLogInput {
   entryMode: number;
   aiConfidence: number | null;
   aiNotes: string | null;
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
+  /** V6：抠图后食物贴纸的 PNG 路径（相对 filesDir），无贴纸为 null */
+  stickerPath: string | null;
 
   constructor(date: string, name: string, mealType: number,
     grams: number | null, kcalPer100g: number | null, calories: number,
-    entryMode: number, aiConfidence: number | null, aiNotes: string | null) {
+    entryMode: number, aiConfidence: number | null, aiNotes: string | null,
+    proteinG: number | null, carbsG: number | null, fatG: number | null,
+    stickerPath: string | null) {
     this.date = date;
     this.name = name;
     this.mealType = mealType;
@@ -71,5 +132,9 @@ export class FoodLogInput {
     this.entryMode = entryMode;
     this.aiConfidence = aiConfidence;
     this.aiNotes = aiNotes;
+    this.proteinG = proteinG;
+    this.carbsG = carbsG;
+    this.fatG = fatG;
+    this.stickerPath = stickerPath;
   }
 }

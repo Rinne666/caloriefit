@@ -1,0 +1,1217 @@
+/**
+ * 今日黑板 —— 当日饮食记录的「黑板 + 贴纸画布」主视图。
+ *
+ * 对应设计方案「黑板与手帐画布布局（Blackboard & Pinboard Canvas）」。
+ *
+ * ## 布局参考 nosh
+ *   ① 顶部横排日期胶囊条，当前日期高亮，可点选切换
+ *   ② 板面上方的摄入仪表（今日摄入 / 还可以吃 / 三大营养素）
+ *   ③ 一排操作：黑板↔网格视图切换、粉笔分栏、一键规整、底纹切换、生成分享卡
+ *   ④ 自由画布：贴纸与便签可拖拽、双指缩放、双指旋转、单击打开抽屉、双击翻面
+ *   ⑤ 结构化网格视图：按早/午/晚/加餐分组，规整排列
+ *   ⑥ 底部：卡通猫 + 粉笔槽
+ *
+ * ## 数据口径
+ * 摄入与预算来自 DailySummaryService，与首页/进度页同一份，不另算一套。
+ * 贴纸节点的名称/热量/宏量来自 food_log（黑板节点只存空间状态），
+ * 见 repositories/BoardRepository.ets 头部说明。
+ *
+ * ## 与旧版的差别
+ * 旧版是一排横向滚动的便签卡（StickyNoteCard），只能看不能摆。
+ * 现在改成真正的自由画布：位置、缩放、角度、层级都落库，
+ * 第二天打开还是用户自己摆的样子。
+ */
+
+import { image } from '@kit.ImageKit';
+import { fileIo } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
+import { componentSnapshot } from '@kit.ArkUI';
+
+import {
+  BoardNodeModel,
+  BoardNodeType,
+  BoardThemeType,
+  BoardViewMode,
+  boardThemeColors
+} from '../models/BoardModels';
+import { BoardRepository } from '../repositories/BoardRepository';
+import { FoodRepository } from '../repositories/FoodRepository';
+import { Database } from '../database/Database';
+import { DailySummary } from '../models/DailySummary';
+import { DailySummaryService } from '../services/DailySummaryService';
+import { MacroRepository, MacroDayTotal } from '../repositories/MacroRepository';
+import { toDateKey, parseDateKey } from '../common/DateUtils';
+import { MEAL_LABELS } from '../common/Constants';
+import { BlackboardNodeWrapper } from './BlackboardNodeWrapper';
+import { FoodStickerItem } from './FoodStickerItem';
+import { StickyNoteItem } from './StickyNoteItem';
+import { NoteEditorSheet, NodeEditResult } from './NoteEditorSheet';
+import { AppDialogService } from '../services/AppDialogService';
+import { color } from '../common/DesignTokens';
+
+/** 日期胶囊上的一项 */
+class DateChip {
+  key: string = '';
+  /** 日，如 21 */
+  day: string = '';
+  /** 星期，如 三 */
+  week: string = '';
+
+  constructor(key: string, day: string, week: string) {
+    this.key = key;
+    this.day = day;
+    this.week = week;
+  }
+}
+
+const WEEK_LABELS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
+
+/** 自由画布高度（vp） */
+const CANVAS_HEIGHT: number = 340;
+/** 画布默认宽度（vp），实际宽度由 onAreaChange 校正 */
+const CANVAS_WIDTH_FALLBACK: number = 330;
+/**
+ * 贴纸占位尺寸。
+ *
+ * 比内容本身略大一点：贴纸有旋转，旋转后外接框会变大，
+ * 占位按内容尺寸算会把相邻贴纸「顶开」。
+ */
+const STICKER_BOX_W: number = 106;
+const STICKER_BOX_H: number = 128;
+/** 便签占位尺寸 */
+const NOTE_BOX_W: number = 136;
+const NOTE_BOX_H: number = 148;
+
+/**
+ * 跳到餐食编辑页的参数。
+ *
+ * 各页面都各自定义一份同结构的参数类（见 pages/HomePage.ets、pages/FoodPage.ets），
+ * 目的是让页面之间不互相 import —— 黑板组件同样自己定义一份。
+ */
+class BoardFoodEditParams {
+  mode: string = 'edit';
+  date: string = '';
+  id: number = -1;
+
+  constructor(mode: string, date: string, id: number) {
+    this.mode = mode;
+    this.date = date;
+    this.id = id;
+  }
+}
+
+/** 跳到 AI 识别页的参数（与 pages/HomePage.ets 的同名类结构一致） */
+class BoardAiParams {
+  date: string = '';
+
+  constructor(date: string) {
+    this.date = date;
+  }
+}
+
+/**
+ * 跳到分享卡预览页的参数。
+ *
+ * 与 pages/SharePosterPage.ets 的 SharePosterParams 结构一致 ——
+ * 各页面各自定义一份，是为了让页面之间不互相 import（见 BoardFoodEditParams 的说明）。
+ */
+class BoardPosterParams {
+  posterUri: string = '';
+  savedPath: string = '';
+
+  constructor(posterUri: string, savedPath: string) {
+    this.posterUri = posterUri;
+    this.savedPath = savedPath;
+  }
+}
+
+@Component
+export struct BlackboardView {
+  /** 路由栈：从黑板跳到餐食编辑页用 */
+  @Consume('navStack') navStack: NavPathStack;
+  /**
+   * 数据刷新广播。写库方（编辑页、全部餐食页）bumpRefresh() 之后，
+   * 黑板必须跟着重载 —— 否则保存完记录回到今日页会出现
+   * 「今日餐食」已显示新条目、黑板却还是旧数据的两处不同步。
+   */
+  @StorageLink('refreshTick') @Watch('reload') refreshTick: number = 0;
+  /** 选中的日期。外部改动时黑板同步重建胶囊条并重载 */
+  @StorageLink('selectedDate') @Watch('onDateChanged') selectedDate: string = '';
+  @State summary: DailySummary | null = null;
+  /** 当日宏量合计（粉笔字那一行用） */
+  @State macroDay: MacroDayTotal | null = null;
+  /** 黑板节点 */
+  @State nodes: BoardNodeModel[] = [];
+  /** 底纹主题 */
+  @State theme: BoardThemeType = BoardThemeType.CHALKBOARD;
+  /** 视图模式 */
+  @State viewMode: BoardViewMode = BoardViewMode.FREE_CANVAS;
+  @State chips: DateChip[] = [];
+  /** 编辑抽屉是否打开 */
+  @State private sheetOpen: boolean = false;
+  /** 正在编辑的节点 */
+  @State private editingNode: BoardNodeModel | null = null;
+  /** 是否显示粉笔分栏线 */
+  @State private showDividers: boolean = false;
+  /** 画布实际宽度 */
+  @State private canvasWidth: number = CANVAS_WIDTH_FALLBACK;
+  /** 当前最大的 zIndex，置顶时用 */
+  @State private topZ: number = 0;
+
+  aboutToAppear(): void {
+    this.buildChips();
+    this.reload();
+  }
+
+  /** 外部改了日期：重建胶囊条并重载 */
+  private onDateChanged(): void {
+    this.buildChips();
+    this.reload();
+  }
+
+  /** 最近 7 天（含今天），按周一为一周之首 */
+  private buildChips(): void {
+    const out: DateChip[] = [];
+    const base = this.selectedDate !== '' ? parseDateKey(this.selectedDate) : new Date();
+    const dow = (base.getDay() + 6) % 7;
+    const monday = new Date(base);
+    monday.setDate(base.getDate() - dow);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const key = toDateKey(d);
+      const today = toDateKey(new Date());
+      if (key > today) {
+        continue;
+      }
+      out.push(new DateChip(key, d.getDate().toString(), WEEK_LABELS[i]));
+    }
+    this.chips = out;
+  }
+
+  private async reload(): Promise<void> {
+    const picked = AppStorage.get<string>('selectedDate');
+    const date = picked !== undefined && picked !== null && picked.length > 0
+      ? picked : toDateKey(new Date());
+    try {
+      this.summary = await DailySummaryService.getSummary(date);
+      this.macroDay = await MacroRepository.getDayTotal(date);
+    } catch (_e) {
+      this.summary = null;
+      this.macroDay = null;
+    }
+    try {
+      const setting = await BoardRepository.getSetting();
+      this.theme = setting.theme;
+      this.viewMode = setting.viewMode;
+    } catch (_e) {
+      this.theme = BoardThemeType.CHALKBOARD;
+      this.viewMode = BoardViewMode.FREE_CANVAS;
+    }
+    await this.loadNodes(date);
+  }
+
+  private async loadNodes(date: string): Promise<void> {
+    try {
+      const loaded = await BoardRepository.getNodes(date);
+      /**
+       * 直接换成新数组，**靠 renderKey 让内容变了的贴纸重建**。
+       *
+       * 之前只用 id 做 key：id 不变 → `ForEach` 复用旧子组件 →
+       * 子组件还绑着旧对象 → 「顶部总热量已经是新值，贴纸还写着旧热量、旧餐次」
+       * （2026-10-21 用户实测复现，交付说明 §19 F05）。
+       * 现在 key 里带内容签名，内容一变 key 就变，组件重建、显示新值；
+       * 内容没变时 key 不变，组件仍然复用，拖拽中的状态不会丢。
+       */
+      this.nodes = loaded;
+      this.topZ = this.computeTopZ(loaded);
+      // 这天还什么都没有 → 铺一套示例节点，让用户第一秒就能上手拖拽
+      if (loaded.length === 0) {
+        const created = await BoardRepository.seedDemo(date);
+        if (created > 0) {
+          const seeded = await BoardRepository.getNodes(date);
+          this.nodes = seeded;
+          this.topZ = this.computeTopZ(seeded);
+        }
+      }
+    } catch (_e) {
+      this.nodes = [];
+    }
+  }
+
+  private computeTopZ(nodes: BoardNodeModel[]): number {
+    let max = -1;
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].zIndex > max) {
+        max = nodes[i].zIndex;
+      }
+    }
+    return max;
+  }
+
+  /* ------------------------------ 数据读取 ------------------------------ */
+
+  private consumed(): number {
+    return this.summary !== null ? this.summary.consumedKcal : 0;
+  }
+
+  private budget(): number {
+    return this.summary !== null ? this.summary.dailyCalorieBudget : 0;
+  }
+
+  private remaining(): number {
+    const left = this.budget() - this.consumed();
+    return left > 0 ? left : 0;
+  }
+
+  private overBudget(): boolean {
+    return this.consumed() > this.budget();
+  }
+
+  private macroText(): string {
+    if (this.summary === null || this.macroDay === null) {
+      return '';
+    }
+    const m = this.macroDay;
+    return `蛋白 ${Math.round(m.actual.proteinG)}g · 碳水 ${Math.round(m.actual.carbsG)}g · 脂肪 ${Math.round(m.actual.fatG)}g`;
+  }
+
+  private mealLabel(mealType: number): string {
+    return mealType >= 0 && mealType < MEAL_LABELS.length ? MEAL_LABELS[mealType] : '加餐';
+  }
+
+  private selectDate(key: string): void {
+    if (key === this.selectedDate) {
+      return;
+    }
+    AppStorage.setOrCreate<string>('selectedDate', key);
+  }
+
+  /* ------------------------------ 节点操作 ------------------------------ */
+
+  /**
+   * 点击置顶。
+   *
+   * **只改层级，绝不碰餐次。**
+   * 之前这里调的是 `persistTransform()`，而 `persistTransform()` 在分栏开启时
+   * 会执行「贴纸落在哪一栏就归哪一餐」—— 于是**单击打开贴纸看一眼**
+   * 就会把这条饮食记录改写成别的餐次，而且已经落库了
+   * （2026-10-21 用户实测复现，交付说明 §19 F06）。
+   *
+   * 层级与餐次是两件事：层级是画布上的顺序，餐次是用户的数据。
+   */
+  private bringToFront(id: number): void {
+    const node = this.findNode(id);
+    if (node === null) {
+      return;
+    }
+    if (node.zIndex === this.topZ) {
+      return;
+    }
+    this.topZ = this.topZ + 1;
+    node.zIndex = this.topZ;
+    this.saveTransform(node);
+  }
+
+  private findNode(id: number): BoardNodeModel | null {
+    for (let i = 0; i < this.nodes.length; i++) {
+      if (this.nodes[i].id === id) {
+        return this.nodes[i];
+      }
+    }
+    return null;
+  }
+
+  /** 打开编辑抽屉 */
+  private openNode(node: BoardNodeModel): void {
+    this.editingNode = node;
+    this.sheetOpen = true;
+  }
+
+  /** 变换结束：落库（位置 / 缩放 / 旋转 / 层级） */
+  private async persistTransform(node: BoardNodeModel): Promise<void> {
+    this.saveTransform(node);
+  }
+
+  /**
+   * 落库空间状态。
+   *
+   * 只写 board_node，**不碰饮食记录的餐次**。
+   */
+  private saveTransform(node: BoardNodeModel): void {
+    BoardRepository.saveTransform(node.id, node.x, node.y, node.scale, node.rotation, node.zIndex)
+      .catch(() => {
+        // 落库失败只影响下次打开的位置，不打断当前操作
+      });
+  }
+
+  /**
+   * **拖拽**结束：落库 + 按分栏同步餐次。
+   *
+   * 只有「用户明确把贴纸拖到别的栏」才允许改写这条记录归属的餐次，
+   * 而且要有 toast 明示改到了哪一餐。
+   * 单击查看、置顶、缩放、旋转都不走这里。
+   */
+  private async onDragFinished(node: BoardNodeModel): Promise<void> {
+    this.saveTransform(node);
+    if (this.showDividers) {
+      await this.syncMealByColumn(node);
+    }
+  }
+
+  /** 分栏模式下：贴纸落在哪一栏，餐次就跟着改成哪一栏 */
+  private async syncMealByColumn(node: BoardNodeModel): Promise<void> {
+    const col = this.mealColumnFor(node.x);
+    if (col < 0 || col === node.mealCategory) {
+      return;
+    }
+    node.mealCategory = col;
+    try {
+      await BoardRepository.saveMealCategory(node.id, col);
+      if (node.foodId !== null) {
+        await FoodRepository.updateMealType(node.foodId, col);
+      }
+      this.getUIContext().getPromptAction().showToast({ message: `已归入${MEAL_LABELS[col]}` });
+      // 餐次变了，汇总数字要跟着重算
+      this.refreshSummary();
+    } catch (_e) {
+      // 忽略
+    }
+  }
+
+  /** 节点的 x 落在第几栏（0~3）；不在范围内返回 -1 */
+  private mealColumnFor(x: number): number {
+    const colWidth = this.canvasWidth / 4;
+    if (colWidth <= 0) {
+      return -1;
+    }
+    const col = Math.floor(x / colWidth);
+    if (col < 0 || col > 3) {
+      return -1;
+    }
+    return col;
+  }
+
+  private async refreshSummary(): Promise<void> {
+    try {
+      this.summary = await DailySummaryService.getSummary(this.selectedDate);
+      this.macroDay = await MacroRepository.getDayTotal(this.selectedDate);
+    } catch (_e) {
+      // 忽略
+    }
+  }
+
+  /** 双击翻面 */
+  private async toggleFlip(node: BoardNodeModel): Promise<void> {
+    node.isFlipped = !node.isFlipped;
+    try {
+      await BoardRepository.saveFlipped(node.id, node.isFlipped);
+    } catch (_e) {
+      // 忽略
+    }
+  }
+
+  /**
+   * 保存抽屉里的编辑。
+   *
+   * ## 餐次要写进 food_log
+   * 贴纸节点是饮食记录的**投影**，内容一律从 food_log 读
+   * （见 BoardRepository.resolveFoodStickers）。
+   * 所以在抽屉里把「早餐」改成「午餐」，只更新 board_node 是没用的 ——
+   * 下次加载又被 food_log 覆盖回早餐。
+   * 之前就是这样：改了看着生效，切换日期回来又变回去了。
+   */
+  private async saveNodeEdit(result: NodeEditResult): Promise<void> {
+    const node = this.editingNode;
+    if (node === null) {
+      this.sheetOpen = false;
+      return;
+    }
+    const mealChanged = node.mealCategory !== result.mealCategory;
+    node.title = result.title;
+    node.calories = result.calories;
+    node.proteinGrams = result.proteinG;
+    node.carbsGrams = result.carbsG;
+    node.fatGrams = result.fatG;
+    node.portionDesc = result.portionDesc;
+    node.mealCategory = result.mealCategory;
+    node.timeStr = result.timeStr;
+    node.moodEmoji = result.moodEmoji;
+    node.companionText = result.companionText;
+    node.memoText = result.memoText;
+    node.paperStyle = result.paperStyle;
+    node.pinType = result.pinType;
+    try {
+      await BoardRepository.saveContent(
+        node.id, result.title, result.calories, result.proteinG, result.carbsG, result.fatG,
+        result.portionDesc, result.mealCategory, result.timeStr,
+        result.moodEmoji, result.companionText, result.memoText,
+        result.paperStyle, result.pinType
+      );
+      // 餐次变了：饮食记录那边也要改，否则汇总和黑板对不上
+      if (mealChanged && node.nodeType === BoardNodeType.FOOD_STICKER && node.foodId !== null) {
+        await FoodRepository.updateMealType(node.foodId, result.mealCategory);
+      }
+    } catch (_e) {
+      // 忽略
+    }
+    this.sheetOpen = false;
+    this.editingNode = null;
+    if (mealChanged) {
+      // 餐次变了 → 汇总数字要重算，其他页面也要跟着更新
+      await this.refreshSummary();
+      this.bumpRefresh();
+    }
+  }
+
+  /**
+   * 删除节点。
+   *
+   * ## 贴纸节点要先确认
+   * 贴纸节点是饮食记录的投影，删它等于**删掉那条饮食记录** ——
+   * 「今日摄入」里的热量也跟着没了。
+   * 其他页面（全部餐食）删记录都有确认，黑板这个入口原来直接就删了，
+   * 用户一点就丢数据。这里补上确认，并把后果说清楚。
+   */
+  private async deleteNode(node: BoardNodeModel): Promise<void> {
+    this.sheetOpen = false;
+    this.editingNode = null;
+    if (node.nodeType === BoardNodeType.FOOD_STICKER && node.foodId !== null) {
+      AppDialogService.confirm('删除这条饮食记录？',
+        `「${node.title}」会连同它在今日摄入里的 ${node.calories} kcal 一起删除，黑板上的贴纸也会消失。`,
+        '删除', () => {
+          this.doDeleteFoodNode(node);
+        });
+      return;
+    }
+    // 便签 / 示例贴纸只删板面节点，不牵涉饮食记录
+    try {
+      await BoardRepository.delete(node.id);
+    } catch (_e) {
+      // 忽略
+    }
+    await this.loadNodes(this.selectedDate);
+  }
+
+  /** 确认之后的真正删除 */
+  private async doDeleteFoodNode(node: BoardNodeModel): Promise<void> {
+    try {
+      if (node.foodId !== null) {
+        await FoodRepository.delete(node.foodId);
+      }
+      await this.refreshSummary();
+      this.bumpRefresh();
+    } catch (_e) {
+      // 忽略
+    }
+    await this.loadNodes(this.selectedDate);
+  }
+
+  /**
+   * 复制到指定日期。
+   *
+   * 复制完必须**当场刷新**：黑板节点、摄入汇总、以及其他页面（今日页/进度页）
+   * 都要看到新记录。复制完只弹个 toast 不刷新的话，
+   * 用户会看到「已复制到 2026-10-21」但板子上还是原来那一条。
+   */
+  private async copyNode(node: BoardNodeModel, targetDate: string): Promise<void> {
+    this.sheetOpen = false;
+    this.editingNode = null;
+    try {
+      await BoardRepository.copyToDate(node, targetDate);
+      this.getUIContext().getPromptAction().showToast({ message: `已复制到 ${targetDate}` });
+    } catch (_e) {
+      this.getUIContext().getPromptAction().showToast({ message: '复制失败' });
+      return;
+    }
+    // 目标可能就是今天：今天的板面与汇总要立刻重画
+    if (targetDate === this.selectedDate) {
+      await this.loadNodes(this.selectedDate);
+      await this.refreshSummary();
+    }
+    // 别的页面（今日页、进度页）也要知道有新记录
+    this.bumpRefresh();
+  }
+
+  /** 广播一次数据更新，让别的页面跟着重载 */
+  private bumpRefresh(): void {
+    const cur = AppStorage.get<number>('refreshTick') ?? 0;
+    AppStorage.setOrCreate<number>('refreshTick', cur + 1);
+  }
+
+  /** 去餐食编辑页改食物本身 */
+  private editFoodOf(node: BoardNodeModel): void {
+    this.sheetOpen = false;
+    this.editingNode = null;
+    if (node.foodId === null) {
+      return;
+    }
+    // 贴纸的内容来自 food_log，要改名称/热量/宏量就得去改那条记录本身
+    this.navStack.pushPathByName('FoodEdit',
+      new BoardFoodEditParams('edit', node.date, node.foodId));
+  }
+
+  /* ------------------------------ 画布操作 ------------------------------ */
+
+  /** 一键规整：按餐次排成两列，保留 ±2° 手作感 */
+  private async tidyUp(): Promise<void> {
+    if (this.nodes.length === 0) {
+      return;
+    }
+    const sorted = this.nodes.slice();
+    sorted.sort((a: BoardNodeModel, b: BoardNodeModel) => {
+      if (a.mealCategory !== b.mealCategory) {
+        return a.mealCategory - b.mealCategory;
+      }
+      return a.id - b.id;
+    });
+    const colWidth = this.canvasWidth / 2;
+    for (let i = 0; i < sorted.length; i++) {
+      const node = sorted[i];
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      node.x = col * colWidth + 10;
+      node.y = 8 + row * 160;
+      node.scale = 1;
+      node.rotation = (i % 2 === 0) ? -2 : 2;
+      // 规整是**按餐次**排的，不该反过来改写餐次
+      this.saveTransform(node);
+    }
+    this.getUIContext().getPromptAction().showToast({ message: '已按餐次规整' });
+  }
+
+  /** 切换底纹主题 */
+  private async cycleTheme(): Promise<void> {
+    const next: BoardThemeType = this.theme === BoardThemeType.CHALKBOARD
+      ? BoardThemeType.CORKBOARD
+      : (this.theme === BoardThemeType.CORKBOARD ? BoardThemeType.DOT_JOURNAL : BoardThemeType.CHALKBOARD);
+    this.theme = next;
+    try {
+      await BoardRepository.saveSetting(next, this.viewMode);
+    } catch (_e) {
+      // 忽略
+    }
+  }
+
+  /** 切换视图：黑板自由视图 ↔ 结构化网格视图 */
+  private async toggleViewMode(): Promise<void> {
+    const next: BoardViewMode = this.viewMode === BoardViewMode.FREE_CANVAS
+      ? BoardViewMode.STRUCTURED_GRID : BoardViewMode.FREE_CANVAS;
+    this.viewMode = next;
+    try {
+      await BoardRepository.saveSetting(this.theme, next);
+    } catch (_e) {
+      // 忽略
+    }
+  }
+
+  /**
+   * 生成今日手帐分享卡。
+   *
+   * 截完直接推一个**独立的预览页**（NavDestination），不再用页内覆盖层：
+   *   · 页内覆盖层只在黑板组件的范围内，首页的 FAB 和底栏仍会盖在它上面；
+   *   · 长画布的预览会把「关闭」按钮挤出可见区域，用户退不出；
+   *   · 页内覆盖层收不到系统返回键，按返回会直接退出应用。
+   * 独立路由页这三条全解决：全屏、底部固定操作栏、返回键由 Navigation 接管。
+   */
+  private async sharePoster(): Promise<void> {
+    let posterUri = '';
+    let savedPath = '';
+    try {
+      const options: componentSnapshot.SnapshotOptions = {
+        scale: 2,
+        waitUntilRenderFinished: true
+      };
+      const pixelMap = await componentSnapshot.get('boardCanvasShot', options);
+      try {
+        const packer = image.createImagePacker();
+        try {
+          const png = await packer.packToData(pixelMap, { format: 'image/png', quality: 100 });
+          const helper = new util.Base64Helper();
+          const b64 = helper.encodeToStringSync(new Uint8Array(png));
+          posterUri = `data:image/png;base64,${b64}`;
+        } finally {
+          packer.release();
+        }
+        // 同时存一份到沙箱，方便后续接「保存到相册」
+        savedPath = await this.savePoster(pixelMap);
+      } finally {
+        pixelMap.release();
+      }
+    } catch (e) {
+      const err = e as Error;
+      // 抛出来的东西未必是 Error，message 可能是 undefined —— 那样用户只会看到
+      // 「生成失败：undefined」，完全不知道发生了什么。
+      const detail: string = (err !== null && err !== undefined && err.message !== undefined &&
+        err.message !== null && err.message.length > 0) ? err.message : '未知错误';
+      this.getUIContext().getPromptAction().showToast({ message: `生成失败：${detail}` });
+      return;
+    }
+    this.navStack.pushPathByName('SharePoster', new BoardPosterParams(posterUri, savedPath));
+  }
+
+  private async savePoster(pixelMap: image.PixelMap): Promise<string> {
+    try {
+      const ctx = Database.getAppContext();
+      if (ctx === null) {
+        return '';
+      }
+      const dir = `${ctx.filesDir}/share`;
+      if (!fileIo.accessSync(dir)) {
+        await fileIo.mkdir(dir, true);
+      }
+      const path = `${dir}/board_${Date.now()}.png`;
+      const file = await fileIo.open(path,
+        fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      try {
+        const packer = image.createImagePacker();
+        try {
+          const opts: image.PackingOption = { format: 'image/png', quality: 100 };
+          await packer.packToFile(pixelMap, file.fd, opts);
+        } finally {
+          packer.release();
+        }
+      } finally {
+        fileIo.closeSync(file);
+      }
+      return path;
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  /* ------------------------------ 构建 ------------------------------ */
+
+  /**
+   * 日期胶囊条。
+   *
+   * ## 颜色用的是应用主题的文本色，不是板面粉笔色
+   * 日期条在**板面外面**，落在页面的浅色背景上。
+   * 之前未选中日期写死成粉笔白 `#F4F1E4`，配浅色页面背景 `#EDF1FA`
+   * 两色亮度对比只有 1.001:1 —— 19、20 日几乎看不见。
+   * 粉笔色只属于板面内部，日期条用文本 token。
+   */
+  @Builder
+  DateStrip() {
+    Row({ space: 6 }) {
+      ForEach(this.chips, (chip: DateChip) => {
+        Column({ space: 1 }) {
+          Text(chip.day)
+            .fontSize(15)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : color.text)
+          Text(chip.week)
+            .fontSize(10)
+            .fontColor(chip.key === this.selectedDate ? '#1E2A22' : color.textHint)
+        }
+        .width(36)
+        .height(46)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(chip.key === this.selectedDate ? '#D5EE6E' : 'transparent')
+        .borderRadius(18)
+        .onClick(() => this.selectDate(chip.key))
+      }, (chip: DateChip) => chip.key)
+    }
+    .width('100%')
+    .padding({ left: 4, right: 4 })
+  }
+
+  /** 板面顶部：粉笔字写的当日摄入 */
+  @Builder
+  Header() {
+    Row() {
+      Column({ space: 2 }) {
+        Text('今日摄入')
+          .fontSize(13)
+          .fontColor(this.theme === BoardThemeType.DOT_JOURNAL ? '#7A736A' : '#C6CFC4')
+        Row({ space: 4 }) {
+          Text(`${this.consumed()}`)
+            .fontSize(34)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.overBudget() ? '#FFB3B3' : this.inkColor())
+          Text(`/ ${this.budget()} kcal`)
+            .fontSize(14)
+            .fontColor(this.inkDimColor())
+            .margin({ top: 12 })
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+
+      Blank()
+
+      Column({ space: 2 }) {
+        Text(this.overBudget() ? '已超出' : '还可以吃')
+          .fontSize(12)
+          .fontColor(this.inkDimColor())
+        Text(`${this.remaining()}`)
+          .fontSize(24)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.overBudget() ? '#FFB3B3' : this.inkColor())
+        Text('kcal')
+          .fontSize(11)
+          .fontColor(this.inkDimColor())
+      }
+      .alignItems(HorizontalAlign.End)
+    }
+    .width('100%')
+
+    if (this.macroText().length > 0) {
+      Text(this.macroText())
+        .fontSize(12)
+        .fontColor(this.inkDimColor())
+        .width('100%')
+        .margin({ top: 4 })
+    }
+  }
+
+  /** 操作排：拍照 / 视图 / 分栏 / 规整 / 底纹 / 分享 */
+  @Builder
+  ActionRow() {
+    Row({ space: 5 }) {
+      // 「一拍即贴」是黑板的主入口，放在操作排最左边并用主色区分。
+      // 之所以要有这个常驻入口：黑板占满首屏后，
+      // 页面下方「今日餐食」里的拍照入口会被推到首屏之外。
+      Text('拍照')
+        .fontSize(11)
+        .fontColor('#FFFFFF')
+        .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+        .backgroundColor('#C2552F')
+        .borderRadius(9)
+        .onClick(() => {
+          this.navStack.pushPathByName('AiRecognition', new BoardAiParams(this.selectedDate));
+        })
+
+      Text(this.viewMode === BoardViewMode.FREE_CANVAS ? '网格' : '自由')
+        .fontSize(11)
+        .fontColor(this.inkColor())
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        .backgroundColor(this.pillColor())
+        .borderRadius(9)
+        .onClick(() => this.toggleViewMode())
+
+      Text(this.showDividers ? '分栏✓' : '分栏')
+        .fontSize(11)
+        .fontColor(this.inkColor())
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        .backgroundColor(this.pillColor())
+        .borderRadius(9)
+        .onClick(() => {
+          this.showDividers = !this.showDividers;
+        })
+
+      Text('规整')
+        .fontSize(11)
+        .fontColor(this.inkColor())
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        .backgroundColor(this.pillColor())
+        .borderRadius(9)
+        .onClick(() => this.tidyUp())
+
+      Text('底纹')
+        .fontSize(11)
+        .fontColor(this.inkColor())
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        .backgroundColor(this.pillColor())
+        .borderRadius(9)
+        .onClick(() => this.cycleTheme())
+
+      Text('分享')
+        .fontSize(11)
+        .fontColor(this.inkColor())
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        .backgroundColor(this.pillColor())
+        .borderRadius(9)
+        .onClick(() => this.sharePoster())
+    }
+    .width('100%')
+    .margin({ top: 8 })
+  }
+
+  /**
+   * 粉笔分栏线（早 / 午 / 晚 / 加餐）。
+   *
+   * ## 必须用 Row 排，不能全塞进 Stack
+   * 原来四个 Column 直接放在同一个 Stack 里（默认 TopStart 对齐），
+   * 四个标题的 bounds 完全一样 —— 早餐午餐晚餐加餐叠在同一个点上。
+   * 现在用 Row 横排，列宽与 `mealColumnFor()` 的四等分一致，
+   * 贴纸落在哪一栏，标题就在哪一栏上方。
+   */
+  @Builder
+  Dividers() {
+    Row() {
+      ForEach([0, 1, 2, 3], (i: number) => {
+        Column() {
+          Text(MEAL_LABELS[i])
+            .fontSize(9)
+            .fontColor(this.inkDimColor())
+          Divider()
+            .vertical(true)
+            .color(this.inkDimColor())
+            .strokeWidth(1)
+        }
+        .width(this.canvasWidth / 4)
+        .height('100%')
+        .alignItems(HorizontalAlign.Center)
+      }, (i: number) => i.toString())
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  /** 节点内容 */
+  @Builder
+  NodeContent(node: BoardNodeModel) {
+    if (node.nodeType === BoardNodeType.STICKY_NOTE ||
+      node.nodeType === BoardNodeType.DEMO_NOTE) {
+      StickyNoteItem({
+        title: node.title,
+        kcal: node.calories,
+        mealLabel: this.mealLabel(node.mealCategory),
+        timeStr: node.timeStr,
+        moodEmoji: node.moodEmoji,
+        companionText: node.companionText,
+        memoText: node.memoText,
+        aiAdvice: node.aiAdvice,
+        paperStyle: node.paperStyle,
+        pinType: node.pinType,
+        noteWidth: NOTE_BOX_W,
+        noteHeight: NOTE_BOX_H,
+        // 示例便签要标出来，别让用户以为那是自己写的
+        isDemo: node.nodeType === BoardNodeType.DEMO_NOTE
+      })
+    } else {
+      FoodStickerItem({
+        title: node.title,
+        kcal: node.calories,
+        mealLabel: this.mealLabel(node.mealCategory),
+        stickerUri: node.stickerUri,
+        moodEmoji: node.moodEmoji,
+        memoSummary: node.memoText,
+        proteinG: node.proteinGrams === null ? 0 : node.proteinGrams,
+        carbsG: node.carbsGrams === null ? 0 : node.carbsGrams,
+        fatG: node.fatGrams === null ? 0 : node.fatGrams,
+        aiAdvice: node.aiAdvice,
+        flipped: node.isFlipped,
+        paperStyle: node.paperStyle,
+        pinType: node.pinType,
+        stickerSize: 84,
+        isDemo: node.nodeType === BoardNodeType.DEMO_STICKER
+      })
+    }
+  }
+
+  /** 自由画布 */
+  @Builder
+  FreeCanvas() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      if (this.showDividers) {
+        this.Dividers()
+      }
+
+      if (this.nodes.length === 0) {
+        this.EmptyBoard()
+      } else {
+        ForEach(this.nodes, (node: BoardNodeModel) => {
+          BlackboardNodeWrapper({
+            node: node,
+            canvasWidth: this.canvasWidth,
+            canvasHeight: this.canvasHeight(),
+            nodeWidth: node.nodeType === BoardNodeType.STICKY_NOTE ? NOTE_BOX_W : STICKER_BOX_W,
+            nodeHeight: node.nodeType === BoardNodeType.STICKY_NOTE ? NOTE_BOX_H : STICKER_BOX_H,
+            onBringToFront: (id: number) => this.bringToFront(id),
+            onOpenNode: (n: BoardNodeModel) => this.openNode(n),
+            onTransformEnd: (n: BoardNodeModel) => this.persistTransform(n),
+            onDragFinished: (n: BoardNodeModel) => this.onDragFinished(n),
+            onToggleFlip: (n: BoardNodeModel) => this.toggleFlip(n),
+            content: () => {
+              this.NodeContent(node)
+            }
+          })
+        }, (node: BoardNodeModel) => node.renderKey())
+      }
+    }
+    .width('100%')
+    .height(this.canvasHeight())
+    .clip(true)
+  }
+
+  /**
+   * 结构化网格视图：按餐次分组。
+   *
+   * ## 为什么用可换行的 Flex，而不是单个 Row
+   * 原来每一餐用一个 `Row` 装全部记录，**一行排到底**。
+   * 一餐超过画布宽度时，第 4 条及以后的记录被挤出可视范围 ——
+   * 界面没有任何横向滚动入口，用户根本看不到它们
+   * （2026-10-21 用户实测复现，交付说明 §19 F09）。
+   * 改成 `Flex + FlexWrap.Wrap`：每行放 3 个，放不下的自动换到下一行。
+   *
+   * ## 为什么不用嵌套的 Scroll
+   * 网格外面已经套了固定高度的 `Scroll`，内容比它高就被裁掉
+   * （分享预览图里能看到便签被切成两半）。
+   * 网格本身改成自然高度，让外层页面滚动 —— 内容不再被裁，
+   * 分享快照也能拍到完整内容。
+   */
+  @Builder
+  StructuredGrid() {
+    Column({ space: 10 }) {
+      ForEach([0, 1, 2, 3], (meal: number) => {
+        Column({ space: 6 }) {
+          Text(MEAL_LABELS[meal])
+            .fontSize(12)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.inkColor())
+            .width('100%')
+
+          if (this.nodesForMeal(meal).length === 0) {
+            Text('—')
+              .fontSize(11)
+              .fontColor(this.inkDimColor())
+              .width('100%')
+          } else {
+            Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
+              ForEach(this.nodesForMeal(meal), (node: BoardNodeModel) => {
+                Column({ space: 3 }) {
+                  if (node.nodeType === BoardNodeType.STICKY_NOTE ||
+                    node.nodeType === BoardNodeType.DEMO_NOTE) {
+                    StickyNoteItem({
+                      title: node.title,
+                      kcal: node.calories,
+                      mealLabel: this.mealLabel(node.mealCategory),
+                      timeStr: node.timeStr,
+                      moodEmoji: node.moodEmoji,
+                      companionText: node.companionText,
+                      memoText: node.memoText,
+                      paperStyle: node.paperStyle,
+                      pinType: node.pinType,
+                      noteWidth: 132,
+                      noteHeight: 132,
+                      isDemo: node.nodeType === BoardNodeType.DEMO_NOTE
+                    })
+                  } else {
+                    FoodStickerItem({
+                      title: node.title,
+                      kcal: node.calories,
+                      mealLabel: this.mealLabel(node.mealCategory),
+                      stickerUri: node.stickerUri,
+                      moodEmoji: node.moodEmoji,
+                      memoSummary: node.memoText,
+                      proteinG: node.proteinGrams === null ? 0 : node.proteinGrams,
+                      carbsG: node.carbsGrams === null ? 0 : node.carbsGrams,
+                      fatG: node.fatGrams === null ? 0 : node.fatGrams,
+                      flipped: node.isFlipped,
+                      paperStyle: node.paperStyle,
+                      pinType: node.pinType,
+                      stickerSize: 68,
+                      isDemo: node.nodeType === BoardNodeType.DEMO_STICKER
+                    })
+                  }
+                }
+                .width(this.gridItemWidth())
+                .margin({ right: 6, bottom: 6 })
+                .onClick(() => this.openNode(node))
+              }, (node: BoardNodeModel) => node.renderKey())
+            }
+            .width('100%')
+          }
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      })
+    }
+    .width('100%')
+    .padding({ bottom: 8 })
+  }
+
+  /** 网格里单个条目的宽度：一行放 3 个 */
+  private gridItemWidth(): number {
+    return Math.max(90, Math.floor((this.canvasWidth - 18) / 3));
+  }
+
+  /** 空态 */
+  @Builder
+  EmptyBoard() {
+    Column({ space: 8 }) {
+      Text('黑板还是空的')
+        .fontSize(17)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.inkColor())
+      Text('拍一张食物，抠出轮廓贴到这里来')
+        .fontSize(13)
+        .fontColor(this.inkDimColor())
+      Text('贴纸可以拖动摆放，双指缩放旋转，双击翻面')
+        .fontSize(11)
+        .fontColor(this.inkDimColor())
+        .margin({ top: 4 })
+    }
+    .width('100%')
+    .height(this.canvasHeight())
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 取某个餐次分组的节点 */
+  private nodesForMeal(meal: number): BoardNodeModel[] {
+    const out: BoardNodeModel[] = [];
+    for (let i = 0; i < this.nodes.length; i++) {
+      if (this.nodes[i].mealCategory === meal) {
+        out.push(this.nodes[i]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 画布高度（vp）。
+   *
+   * 贴纸多了（用户一天记了十几条）画布要跟着长高，
+   * 否则后面的贴纸全被压到板子底边、互相叠着。
+   * 画布在页面纵向 Scroll 里，长高后页面自然能滚下去看到。
+   *
+   * 行数按**两列**算 —— 「一键规整」排的就是两列，
+   * 画布要能装下规整后的结果，不能按三列算（否则规整完下排会被裁掉）。
+   */
+  private canvasHeight(): number {
+    const rows = Math.ceil(this.nodes.length / 2);
+    const needed = rows * 162 + 16;
+    return needed > CANVAS_HEIGHT ? needed : CANVAS_HEIGHT;
+  }
+
+  private inkColor(): string {
+    return boardThemeColors(this.theme).text;
+  }
+
+  private inkDimColor(): string {
+    return boardThemeColors(this.theme).textDim;
+  }
+
+  private pillColor(): string {
+    if (this.theme === BoardThemeType.DOT_JOURNAL) {
+      return '#EFE9DC';
+    }
+    if (this.theme === BoardThemeType.CORKBOARD) {
+      return '#E3C6A9';
+    }
+    return '#3E6150';
+  }
+
+  build() {
+    Column() {
+      this.DateStrip()
+      this.Board()
+    }
+    .width('100%')
+  }
+
+  /** 木框 + 板面 */
+  @Builder
+  Board() {
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      Column() {
+        this.Header()
+        this.ActionRow()
+
+        /**
+         * 画布区：**两种视图共用的快照目标**。
+         *
+         * 之前 `.id('boardCanvasShot')` 只挂在自由画布上，
+         * 网格视图里根本没有这个节点 —— 网格下点分享必然失败
+         * （componentSnapshot 找不到节点，抛出的错误连 message 都没有，
+         *  界面上就显示成「生成失败：undefined」）。
+         * 现在 id 挂在这个两种视图都会渲染的容器上，谁在都能截。
+         *
+         * ## 必须给它自己的底色
+         * `componentSnapshot` 截的是节点**自身**的绘制结果，
+         * 透明背景的节点截出来就是透明 PNG。放到预览页的米白底上，
+         * 粉笔色的餐次标题（`#C6CFC4`）就成了「浅灰字画在白底上」—— 几乎读不出来
+         * （2026-10-21 用户实测复现，交付说明 §19 F11）。
+         * 显式给板面底色，截出来的图才是「一块板子」。
+         */
+        Stack() {
+          if (this.viewMode === BoardViewMode.FREE_CANVAS) {
+            this.FreeCanvas()
+          } else {
+            this.StructuredGrid()
+          }
+        }
+        .width('100%')
+        // 自由画布是固定高度（贴纸自由摆放的区域）；
+        // 网格视图改成**自然高度**，内容不再被裁掉，分享快照也能拍到完整内容。
+        .height(this.viewMode === BoardViewMode.FREE_CANVAS ? this.canvasHeight() : 'auto')
+        .backgroundColor(boardThemeColors(this.theme).board)
+        .id('boardCanvasShot')
+        .onAreaChange((_old: Area, area: Area) => {
+          const w = parseFloat(area.width.toString());
+          if (!isNaN(w) && w > 0) {
+            this.canvasWidth = w;
+          }
+        })
+
+        // 底部：卡通猫 + 粉笔槽
+        Row() {
+          Blank()
+          Image($r('app.media.mascot_cat'))
+            .width(46)
+            .height(46)
+            .objectFit(ImageFit.Contain)
+            .margin({ right: 4 })
+        }
+        .width('100%')
+        .height(34)
+        .alignItems(VerticalAlign.Bottom)
+      }
+      .padding({ left: 14, right: 14, top: 12, bottom: 6 })
+      .width('100%')
+      .backgroundColor(boardThemeColors(this.theme).board)
+      .borderRadius(12)
+      .linearGradient({
+        angle: 120,
+        colors: [
+          [boardThemeColors(this.theme).board, 0],
+          [boardThemeColors(this.theme).texture, 0.45],
+          [boardThemeColors(this.theme).board, 1]
+        ]
+      })
+
+      // 粉笔槽
+      Row() {
+        Column()
+          .width(26).height(8).backgroundColor('#F4F1E4').borderRadius(5)
+          .rotate({ angle: -6 })
+        Column()
+          .width(26).height(8).backgroundColor('#FFD97D').borderRadius(5)
+          .rotate({ angle: 4 })
+          .margin({ left: 7 })
+      }
+      .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+      .backgroundColor('#A8794C')
+      .borderRadius(6)
+      .margin({ right: 66, bottom: 4 })
+    }
+    .width('100%')
+    .padding(9)
+    .backgroundColor(boardThemeColors(this.theme).frame)
+    .borderRadius(18)
+    .shadow({ radius: 16, color: '#66000000', offsetX: 0, offsetY: 8 })
+    .bindSheet($$this.sheetOpen, this.EditorSheet(), {
+      height: SheetSize.LARGE,
+      dragBar: true,
+      backgroundColor: '#FFF8E7',
+      showClose: true
+    })
+  }
+
+  @Builder
+  EditorSheet() {
+    NoteEditorSheet({
+      node: this.editingNode,
+      onSave: (result: NodeEditResult) => this.saveNodeEdit(result),
+      onDelete: (node: BoardNodeModel) => this.deleteNode(node),
+      onCopy: (node: BoardNodeModel, targetDate: string) => this.copyNode(node, targetDate),
+      onEditFood: (node: BoardNodeModel) => this.editFoodOf(node),
+      onClose: () => {
+        this.sheetOpen = false;
+        this.editingNode = null;
+      }
+    })
+  }
+}

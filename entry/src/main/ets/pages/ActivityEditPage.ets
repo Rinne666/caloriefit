@@ -4,7 +4,7 @@
 
 import { ExerciseRepository } from '../repositories/ExerciseRepository';
 import { ExerciseLog } from '../models/ExerciseLog';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { formatNumber } from '../common/DateUtils';
 import { validateDuration, validateBurned } from '../common/Validators';
 import { EXERCISE_LABELS } from '../common/Constants';
@@ -241,9 +241,11 @@ export struct ActivityEditPage {
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
       .backgroundColor(color.bg)
+      .linearGradient(pageGradient())
     }
     .title(this.mode === 'edit' ? '编辑运动' : '新增运动')
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
     .onReady((ctx: NavDestinationContext) => {
       const p = ctx.pathInfo.param as ActivityEditParams | null | undefined;
       this.buildParams(p);

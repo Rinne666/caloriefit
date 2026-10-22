@@ -34,6 +34,7 @@ export class DailySummaryService {
 
     return new DailySummary(date, consumed, burned, minutes, activity.steps,
       settings.dailyCalorieBudget, settings.stepsGoal,
-      settings.exerciseMinutesGoal, settings.activityKcalGoal);
+      settings.exerciseMinutesGoal, settings.activityKcalGoal,
+      activity.source);
   }
 }

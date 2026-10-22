@@ -6,22 +6,16 @@ import { AiConfigRepository } from '../repositories/AiConfigRepository';
 import { AiCredentialStore } from '../repositories/AiCredentialStore';
 import { AppDialogService } from '../services/AppDialogService';
 import { AiConfig } from '../models/AiConfig';
-import { color, fontSize, space, radius, layout } from '../common/DesignTokens';
+import { color, fontSize, space, radius, layout, pageGradient } from '../common/DesignTokens';
 import { AiDefaults } from '../common/AiConstants';
+import { AiUrlPolicy } from '../common/AiUrlPolicy';
 
-/** Base URL 校验：仅允许 HTTPS 且 host 属于百炼域名 */
-function validateBaseUrl(input: string): boolean {
-  const trimmed = input.trim();
-  if (!trimmed.startsWith('https://')) {
-    return false;
-  }
-  try {
-    const host = trimmed.replace('https://', '').split('/')[0].split(':')[0];
-    return host === 'dashscope.aliyuncs.com' || host.endsWith('.maas.aliyuncs.com');
-  } catch (e) {
-    return false;
-  }
-}
+/**
+ * Base URL 校验已移到 common/AiUrlPolicy.ets（可单测）。
+ *
+ * 原来的实现在这里用字符串 split 取 host，能被 `https://opencsg.com:443@example.invalid/v1`
+ * 这种 userinfo 写法骗过 —— 详见 AiUrlPolicy 的说明。
+ */
 
 @Component
 export struct AiSettingsPage {
@@ -58,33 +52,66 @@ export struct AiSettingsPage {
       AppDialogService.toast('模型名称不能为空');
       return;
     }
-    if (!validateBaseUrl(baseUrl)) {
-      AppDialogService.toast('Base URL 必须是 https 且属于百炼域名');
+    if (!AiUrlPolicy.isAllowedBaseUrl(baseUrl)) {
+      AppDialogService.toast('Base URL 必须是 https 且属于已声明的服务方域名');
       return;
     }
     try {
+      const previousConfig = await AiConfigRepository.loadConfig();
+      const previousKey = await AiCredentialStore.getApiKey();
       const config = new AiConfig(baseUrl, model, this.rememberKey);
-      await AiConfigRepository.saveConfig(config);
       const key = this.keyInput.trim();
+      let credentialChanged = false;
+      let storedKey = false;
+
       if (key.length > 0) {
         await AiCredentialStore.saveApiKey(key, this.rememberKey);
-        if (this.rememberKey) {
-          const ok = await AiCredentialStore.canPersistSecurely();
-          if (!ok) {
-            AppDialogService.toast('无法安全记住 Key，本次会话内有效');
-          } else {
-            AppDialogService.toast('配置已保存，API Key 已安全记住');
-          }
-        } else {
-          AppDialogService.toast('配置已保存，Key 本次会话内有效');
+        credentialChanged = true;
+        storedKey = this.rememberKey;
+      } else if (this.rememberKey) {
+        // 从会话模式切换为安全记住时，将当前已配置的密钥写入安全存储。
+        const existingKey = previousKey ?? '';
+        if (!previousConfig.rememberApiKey && existingKey.length > 0) {
+          await AiCredentialStore.saveApiKey(existingKey, true);
+          credentialChanged = true;
+          storedKey = true;
         }
+      } else {
+        // 即使输入框为空，关闭“安全记住”也必须移除旧的持久化密钥。
+        await AiCredentialStore.forgetPersistedApiKey();
+        credentialChanged = true;
+      }
+
+      try {
+        await AiConfigRepository.saveConfig(config);
+      } catch (e) {
+        // 配置落盘失败时，尽量恢复之前的凭证状态，避免开关与安全存储不一致。
+        if (credentialChanged) {
+          try {
+            if (previousKey !== null && previousKey.length > 0) {
+              await AiCredentialStore.saveApiKey(previousKey, previousConfig.rememberApiKey);
+            } else {
+              await AiCredentialStore.clearApiKey();
+            }
+          } catch (rollbackError) {
+            console.error(`AI credential rollback failed: ${String(rollbackError)}`);
+          }
+        }
+        const saveError = e as Error;
+        throw new Error(saveError.message);
+      }
+
+      if (storedKey) {
+        AppDialogService.toast('配置已保存，API Key 已安全记住');
+      } else if (key.length > 0 || (!this.rememberKey && previousKey !== null)) {
+        AppDialogService.toast('配置已保存，Key 本次会话内有效');
       } else {
         AppDialogService.toast('配置已保存');
       }
       this.keyInput = '';
       this.hasStoredKey = (await AiCredentialStore.getApiKey()) !== null;
     } catch (e) {
-      AppDialogService.toast('保存失败：当前环境无法安全存储，请改用会话模式');
+      AppDialogService.toast('配置或密钥保存失败，请检查后重试');
     }
   }
 
@@ -123,7 +150,7 @@ export struct AiSettingsPage {
               Text('模型名称')
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
-              TextInput({ text: this.modelInput, placeholder: '例如 qwen3-vl-plus' })
+              TextInput({ text: this.modelInput, placeholder: '例如 deepseek-v4.1-flash-1017' })
                 .height(layout.inputHeight)
                 .fontSize(fontSize.body)
                 .backgroundColor(color.surfaceMuted)
@@ -156,7 +183,7 @@ export struct AiSettingsPage {
                 .fontSize(fontSize.secondary)
                 .fontColor(color.textSecondary)
               Row({ space: space.sm }) {
-                TextInput({ text: this.keyInput, placeholder: 'sk-…' })
+                TextInput({ text: this.keyInput, placeholder: 'gk-… / sk-…' })
                   .type(InputType.Password)
                   .showPasswordIcon(this.showKey)
                   .height(layout.inputHeight)
@@ -257,8 +284,10 @@ export struct AiSettingsPage {
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
       .backgroundColor(color.bg)
+      .linearGradient(pageGradient())
     }
     .title('AI 设置')
     .backgroundColor(color.bg)
+    .linearGradient(pageGradient())
   }
 }
